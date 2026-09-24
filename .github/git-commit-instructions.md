@@ -7,7 +7,18 @@ Format:
 
 Rules:
 
-- Use an appropriate type: feat, fix, refactor, perf, docs, test, build, ci, or chore.
+- Use an appropriate type:
+    - feat: new functionality
+    - fix: bug fixes
+    - refactor: internal code restructuring without behavior changes
+    - style: formatting, import ordering, and lint-only changes
+    - perf: performance improvements
+    - docs: documentation changes
+    - test: adding or updating tests
+    - build: build system or dependency changes
+    - ci: CI/CD configuration changes
+    - chore: routine maintenance
+- Choose the commit type based on the actual changes, not the files modified.
 - Include a scope when the affected component or module is identifiable.
 - Use imperative mood and lowercase descriptions.
 - Keep the subject line within 72 characters, without a trailing period.
