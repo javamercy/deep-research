@@ -27,11 +27,13 @@ requires = ["uv_build>=0.12.17,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.ruff]
+line-length = 999
 target-version = "py313"
 src = ["src", "evals"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
+extend-ignore = ["E501"]
 
 [tool.pyrefly]
 python-version = "3.13"

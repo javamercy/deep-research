@@ -1,5 +1,6 @@
 import operator
-from typing import Annotated, Sequence, NotRequired
+from collections.abc import Sequence
+from typing import Annotated, NotRequired
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph import MessagesState, add_messages

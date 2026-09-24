@@ -7,7 +7,7 @@ from rich.console import Console
 
 from deep_research.configuration import Configuration
 from deep_research.state import AgentInputState, AgentState
-from deep_research.utils import display_messages, display_markdown
+from deep_research.utils import display_markdown, display_messages
 from deep_research.workflows.scoping import build_scoping_graph
 
 

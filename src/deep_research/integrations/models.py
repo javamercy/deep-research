@@ -1,9 +1,10 @@
 from enum import StrEnum
 from typing import assert_never
 
-from deep_research.configuration import Configuration, LLMModelConfig
 from langchain_core.language_models import BaseChatModel
 from langchain_openrouter import ChatOpenRouter
+
+from deep_research.configuration import Configuration, LLMModelConfig
 
 
 class ModelRole(StrEnum):
