@@ -1,19 +1,20 @@
+from typing import cast
 from uuid import uuid4
 
+from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
-from rich.console import Console
+from rich import Console
 
-from deep_research.configuration import Configuration
 from deep_research.state import AgentInputState, AgentState
 from deep_research.utils import display_markdown, display_messages
 from deep_research.workflows.scoping import build_scoping_graph
 
 
 async def main():
+    load_dotenv()
     config = RunnableConfig(configurable={"thread_id": str(uuid4())})
-    context = Configuration()
     input_state = AgentInputState(
         messages=[
             HumanMessage(
@@ -22,15 +23,14 @@ async def main():
         ]
     )
     graph = build_scoping_graph(checkpointer=InMemorySaver())
-    # TODO: see workflows/scoping.py:99
-    # pyrefly: ignore [no-matching-overload]
-    result: AgentState = await graph.ainvoke(
-        input=input_state,
-        context=context,
-        config=config,
+    result = cast(
+        AgentState,
+        # TODO: see workflows/scoping.py
+        # pyrefly: ignore [no-matching-overload]
+        await graph.ainvoke(input=input_state, config=config)
     )
 
-    console = Console(width=150)
+    console = Console()
 
     display_messages(result["messages"], console=console)
 
@@ -41,11 +41,12 @@ async def main():
             )
         ]
     )
-    # pyrefly: ignore [no-matching-overload]
-    result: AgentState = await graph.ainvoke(
-        input=input_state,
-        context=context,
-        config=config,
+
+    result = cast(
+        AgentState,
+        # TODO: see workflows/scoping.py
+        # pyrefly: ignore [no-matching-overload]
+        await graph.ainvoke(input=input_state, config=config)
     )
 
     display_messages(result["messages"], console=console)

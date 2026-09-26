@@ -9,7 +9,9 @@ dependencies = [
     "langchain-openrouter>=0.2.9",
     "langchain-tavily>=0.2.18",
     "langgraph>=1.2.12",
+    "langsmith>=0.14.0",
     "pydantic>=2.13.5",
+    "python-dotenv>=1.2.3",
     "rich>=15.0.0",
 ]
 
@@ -37,6 +39,6 @@ extend-ignore = ["E501"]
 
 [tool.pyrefly]
 python-version = "3.13"
-search-path = ["src", "evals"]
-preset = "strict"
+search-path = ["src", "."]
+preset = "default"
 

@@ -24,11 +24,10 @@ def get_today_str():
     return datetime.now().strftime("%a %b %-d, %Y")
 
 
-def display_markdown(content: str, *, console: Console | None = None) -> None:
+def display_markdown(content: str, *, console: Console) -> None:
     """Render plain text or Markdown content in the terminal."""
 
-    output = console or Console(width=120)
-    output.print(Markdown(content, code_theme="ansi_dark"))
+    console.print(Markdown(content, code_theme="ansi_dark"))
 
 
 def _json(value: object) -> str:
@@ -46,10 +45,10 @@ def _tool_call_key(name: str, arguments: object, call_id: object) -> tuple[str, 
 
 
 def _tool_call_panel(
-    name: str,
-    arguments: object,
-    call_id: object = None,
-    error: object = None,
+        name: str,
+        arguments: object,
+        call_id: object = None,
+        error: object = None,
 ) -> Panel:
     """Create a compact, structured rendering of one tool call."""
 
@@ -168,23 +167,22 @@ def _message_subtitle(message: BaseMessage) -> Text | None:
 
 
 def display_messages(
-    messages: Sequence[BaseMessage],
-    *,
-    console: Console | None = None,
+        messages: Sequence[BaseMessage],
+        *,
+        console: Console,
 ) -> None:
     """Display LangChain messages as a readable, role-aware conversation."""
 
-    output = console or Console(width=120)
     count = len(messages)
     noun = "message" if count == 1 else "messages"
-    output.print(Rule(f"Conversation · {count} {noun}", style="bright_black"))
+    console.print(Rule(f"Conversation · {count} {noun}", style="bright_black"))
 
     for index, message in enumerate(messages):
         icon, label, color = _MESSAGE_STYLES.get(
             message.type,
             ("📝", message.type.replace("_", " ").title(), "white"),
         )
-        output.print(
+        console.print(
             Panel(
                 _message_body(message),
                 title=Text(f"{icon} {label}", style=f"bold {color}"),
@@ -196,4 +194,4 @@ def display_messages(
             )
         )
         if index < count - 1:
-            output.print()
+            console.print()

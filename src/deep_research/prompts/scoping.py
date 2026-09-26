@@ -14,9 +14,10 @@ Today's date is {date}.
 
 <clarification_requirements>
 When clarification is necessary:
-- Be concise while gathering all necessary information.
-- Gather all information needed to carry out the research task in a concise, well-structured manner.
-- Use bullet points or numbered lists when appropriate. The output must use Markdown that renders correctly.
+- Be concise while gathering all necessary information
+- Make sure to gather all the information needed to carry out the research task in a concise, well-structured manner.
+- Use bullet points or numbered lists if appropriate for clarity. Make sure that this uses markdown formatting and will be rendered correctly if the string output is passed to a markdown renderer.
+- Don't ask for unnecessary information, or information that the user has already provided. If you can see that the user has already provided the information, do not ask for it again.
 </clarification_requirements>
 
 <verification_requirements>
@@ -28,16 +29,21 @@ When clarification is not necessary:
 </verification_requirements>
 
 <response_contract>
-Return values that conform to the provided structured-output schema:
-- Set `need_clarification` to `true` only when clarification is necessary.
-- When `need_clarification` is `true`, populate `question` and leave `verification` empty.
-- When `need_clarification` is `false`, leave `question` empty and populate `verification`.
+If you need to ask a clarifying question, return:
+"need_clarification": true,
+"question": "<your clarifying question>",
+"verification": ""
+
+If you do not need to ask a clarifying question, return:
+"need_clarification": false,
+"question": "",
+"verification": "<acknowledgement message that you will now start research based on the provided information>"
 </response_contract>
 """
 
 CLARIFICATION_USER_PROMPT = """
-<conversation_history>
 These are the messages that have been exchanged so far from the user asking for the report:
+<conversation_history>
 {messages}
 </conversation_history>
 """
@@ -90,8 +96,8 @@ Guidelines:
 """
 
 WRITE_RESEARCH_BRIEF_USER_PROMPT = """
-<conversation_history>
 The messages that have been exchanged so far between yourself and the user are:
+<conversation_history>
 {messages}
 </conversation_history>
 """

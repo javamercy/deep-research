@@ -1,10 +1,14 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class ClarificationDecision(BaseModel):
-    """Decision about whether research requires user clarification."""
+class FrozenBaseModel(BaseModel):
+    """Base model with frozen configuration."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class ClarificationDecision(FrozenBaseModel):
+    """Decision about whether research requires user clarification."""
 
     need_clarification: bool = Field(
         description="Whether the user needs to be asked a clarifying question.",
