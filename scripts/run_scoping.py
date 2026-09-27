@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
-from rich import Console
+from rich.console import Console
 
 from deep_research.state import AgentInputState, AgentState
 from deep_research.utils import display_markdown, display_messages

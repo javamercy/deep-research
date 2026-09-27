@@ -12,6 +12,26 @@ from deep_research.schemas import ClarificationDecision, ResearchQuestion
 from deep_research.state import AgentInputState, AgentState
 from deep_research.utils import get_today_str
 
+model = ChatOpenRouter(
+    model=LLMModel.DEEPSEEK_V4_FLASH,
+    temperature=0.1,
+    reasoning={"effort": "medium"},
+)
+
+clarification_model = model.with_structured_output(
+    ClarificationDecision,
+    method="json_schema",
+    include_raw=False,
+    strict=True,
+)
+
+research_brief_model = model.with_structured_output(
+    ResearchQuestion,
+    method="json_schema",
+    include_raw=False,
+    strict=True,
+)
+
 
 async def clarify_with_user(state: AgentState) -> Command[Literal["write_research_brief", "__end__"]]:
     """
@@ -21,17 +41,6 @@ async def clarify_with_user(state: AgentState) -> Command[Literal["write_researc
     Routes to either research brief generation or ends with a clarification question.
     """
 
-    model = ChatOpenRouter(
-        model=LLMModel.DEEPSEEK_V4_FLASH,
-        temperature=0.1,
-        reasoning={"effort": "medium"})
-
-    structured_output_model = model.with_structured_output(
-        ClarificationDecision,
-        method="json_schema",
-        include_raw=False,
-        strict=True)
-
     messages = [
         SystemMessage(content=CLARIFICATION_SYSTEM_PROMPT.format(date=get_today_str())),
         HumanMessage(content=CLARIFICATION_USER_PROMPT.format(
@@ -40,7 +49,7 @@ async def clarify_with_user(state: AgentState) -> Command[Literal["write_researc
     ]
     response = cast(
         ClarificationDecision,
-        await structured_output_model.ainvoke(messages)
+        await clarification_model.ainvoke(messages)
     )
 
     if response.need_clarification:
@@ -63,17 +72,6 @@ async def write_research_brief(state: AgentState) -> dict:
     and contains all necessary details for effective research.
     """
 
-    model = ChatOpenRouter(
-        model=LLMModel.DEEPSEEK_V4_FLASH,
-        temperature=0.1,
-        reasoning={"effort": "medium"})
-
-    structured_output_model = model.with_structured_output(
-        ResearchQuestion,
-        include_raw=False,
-        method="json_schema",
-        strict=True
-    )
     messages = [
         SystemMessage(content=WRITE_RESEARCH_BRIEF_SYSTEM_PROMPT.format(date=get_today_str())),
         HumanMessage(content=WRITE_RESEARCH_BRIEF_USER_PROMPT.format(
@@ -82,7 +80,7 @@ async def write_research_brief(state: AgentState) -> dict:
     ]
     response = cast(
         ResearchQuestion,
-        await structured_output_model.ainvoke(messages)
+        await research_brief_model.ainvoke(messages)
     )
 
     return {
