@@ -55,7 +55,7 @@ async def clarify_with_user(state: AgentState) -> Command[Literal["write_researc
         )
 
 
-async def write_research_brief(state: AgentState) -> AgentState:
+async def write_research_brief(state: AgentState) -> dict:
     """
     Transform the conversation history into a comprehensive research brief.
 
@@ -85,9 +85,10 @@ async def write_research_brief(state: AgentState) -> AgentState:
         await structured_output_model.ainvoke(messages)
     )
 
-    state["research_brief"] = response.research_brief
-    state["supervisor_messages"] = [HumanMessage(content=response.research_brief)]
-    return state
+    return {
+        "research_brief": response.research_brief,
+        "supervisor_messages": [HumanMessage(content=response.research_brief)]
+    }
 
 
 def build_scoping_graph(checkpointer: Checkpointer):
