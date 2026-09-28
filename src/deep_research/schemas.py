@@ -27,9 +27,16 @@ class ClarificationDecision(FrozenBaseModel):
     )
 
 
-class ResearchQuestion(BaseModel):
+class ResearchQuestion(FrozenBaseModel):
     """Schema for structured research brief generation."""
 
     research_brief: str = Field(
         description="A research question that will be used to guide the research.",
     )
+
+
+class ContentSummary(FrozenBaseModel):
+    """Schema for webpage content summarization."""
+
+    summary: str = Field(description="Concise summary of the webpage content")
+    key_excerpts: str = Field(description="Important quotes and excerpts from the content")

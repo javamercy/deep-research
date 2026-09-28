@@ -8,6 +8,13 @@ from deep_research.configuration import LLMModel
 from evals.scoping.prompts import BRIEF_CRITERIA_SYSTEM_PROMPT, BRIEF_CRITERIA_USER_PROMPT, BRIEF_GROUNDEDNESS_SYSTEM_PROMPT, BRIEF_GROUNDEDNESS_USER_PROMPT
 from evals.scoping.schemas import BriefGroundednessEvaluation, CriteriaEvaluation
 
+judge = ChatOpenRouter(model=LLMModel.DEEPSEEK_V4_FLASH, temperature=0.1)
+structured_judge = judge.with_structured_output(
+    CriteriaEvaluation,
+    method="json_schema",
+    include_raw=False,
+    strict=True)
+
 
 async def brief_criteria_evaluator(
         outputs: dict[str, object],
@@ -18,13 +25,6 @@ async def brief_criteria_evaluator(
 
     if not isinstance(criteria, list):
         raise TypeError("Reference outputs must contain a list of criteria strings.")
-
-    judge = ChatOpenRouter(model=LLMModel.DEEPSEEK_V4_FLASH, temperature=0.1)
-    structured_judge = judge.with_structured_output(
-        CriteriaEvaluation,
-        method="json_schema",
-        include_raw=False,
-        strict=True)
 
     responses = cast(
         list[CriteriaEvaluation],
@@ -72,13 +72,6 @@ async def brief_groundedness_evaluator(
 
     if not isinstance(criteria, list):
         raise TypeError("Reference outputs must contain a list of criteria strings.")
-
-    judge = ChatOpenRouter(model=LLMModel.DEEPSEEK_V4_FLASH, temperature=0.1)
-    structured_judge = judge.with_structured_output(
-        BriefGroundednessEvaluation,
-        method="json_schema",
-        include_raw=False,
-        strict=True)
 
     response = cast(
         BriefGroundednessEvaluation,
