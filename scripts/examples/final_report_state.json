@@ -1,0 +1,15 @@
+{
+  "messages": [
+    {
+      "type": "human",
+      "content": "Compare two fictional tools using the supplied findings."
+    }
+  ],
+  "research_brief": "Compare Alpha and Beta on cost and speed, using only the supplied findings.",
+  "supervisor_messages": [],
+  "raw_notes": [],
+  "notes": [
+    "Alpha costs $10 per task and takes two days. [1] Alpha report: https://example.com/alpha",
+    "Beta costs $12 per task and takes one day. [2] Beta report: https://example.com/beta"
+  ]
+}
