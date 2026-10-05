@@ -43,6 +43,9 @@ async def conduct_research(state: ResearcherState, config: RunnableConfig) -> di
     Returns updated state with the model's response.
     """
 
+    if not state.get("research_topic"):
+        raise ValueError("Research input requires a nonempty research topic.")
+
     configuration = Configuration.from_runnable_config(config)
     model_with_tools = (
         init_openrouter_model(llm_config=configuration.research_llm_config)
@@ -73,7 +76,7 @@ async def compress_research(state: ResearcherState, config: RunnableConfig) -> d
         *state["researcher_messages"],
         HumanMessage(
             content=COMPRESS_USER_PROMPT.format(
-                research_topic=state["research_topic"]
+                research_topic=state["research_topic"],
             )
         ),
     ]
