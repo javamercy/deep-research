@@ -4,13 +4,12 @@ from typing import Literal, cast
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage, filter_messages
 from langchain_core.runnables import RunnableConfig
-from langchain_openrouter import ChatOpenRouter
-from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 from langgraph.types import Checkpointer, Command
 
-from deep_research.configuration import LLMModel
+from deep_research.configuration import Configuration
+from deep_research.models import init_openrouter_model
 from deep_research.prompts.supervisor import SUPERVISOR_SYSTEM_PROMPT
 from deep_research.state import ResearcherState, SupervisorState
 from deep_research.tools.reflection import think_tool
@@ -18,21 +17,7 @@ from deep_research.tools.supervisor import ConductResearch, ResearchComplete
 from deep_research.utils import get_today_str
 from deep_research.workflows.research import build_research_graph
 
-tools = [ConductResearch, ResearchComplete, think_tool]
-model = ChatOpenRouter(
-    model=LLMModel.DEEPSEEK_V4_FLASH,
-    temperature=0.1,
-    reasoning={"effort": "high"},
-)
-model_with_tools = model.bind_tools(tools=tools)
-
-# Maximum number of tool call iterations for individual researcher agents
-# This prevents infinite loops and controls research depth per topic
-max_researcher_iterations = 6  # Calls to think_tool + ConductResearch
-
-# Maximum number of concurrent research agents the supervisor can launch
-# This is passed to the lead_researcher_prompt to limit parallel research tasks
-max_concurrent_researchers = 3
+_tools = [ConductResearch, ResearchComplete, think_tool]
 
 
 def get_notes_from_tool_calls(messages: Sequence[BaseMessage]) -> list[str]:
@@ -57,7 +42,10 @@ def get_notes_from_tool_calls(messages: Sequence[BaseMessage]) -> list[str]:
     ]
 
 
-async def supervisor(state: SupervisorState) -> Command[Literal["supervisor_tools"]]:
+async def supervisor(
+        state: SupervisorState,
+        config: RunnableConfig
+) -> Command[Literal["supervisor_tools"]]:
     """Coordinate research activities.
 
     Analyzes the research brief and current progress to decide:
@@ -67,18 +55,24 @@ async def supervisor(state: SupervisorState) -> Command[Literal["supervisor_tool
 
     Args:
         state: Current supervisor state with messages and research progress
+        config: Runnable configuration for managing sub-agent execution
 
     Returns:
         Command to proceed to supervisor_tools node with updated state
     """
 
-    supervisor_messages = state.get("supervisor_messages", [])
+    configuration = Configuration.from_runnable_config(config)
+    model_with_tools = (
+        init_openrouter_model(llm_config=configuration.scoping_llm_config)
+        .bind_tools(_tools)
+    )
+
     system_message = SUPERVISOR_SYSTEM_PROMPT.format(
         date=get_today_str(),
-        max_concurrent_research_units=max_concurrent_researchers,
-        max_researcher_iterations=max_researcher_iterations,
+        max_concurrent_research_units=config,
+        max_researcher_iterations=configuration.max_researcher_iterations,
     )
-    messages = [SystemMessage(content=system_message), *supervisor_messages]
+    messages = [SystemMessage(content=system_message), *state["supervisor_messages"]]
 
     response = await model_with_tools.ainvoke(messages)
 
@@ -110,6 +104,9 @@ async def supervisor_tools(
     Returns:
        Command to continue supervision, end process, or handle errors
     """
+
+    configuration = Configuration.from_runnable_config(config)
+    max_researcher_iterations = configuration.max_researcher_iterations
 
     supervisor_messages = state["supervisor_messages"]
     research_iterations = state["research_iterations"]
@@ -154,17 +151,10 @@ async def supervisor_tools(
                 )
 
             if conduct_research_calls:
-                researcher_agent = build_research_graph(InMemorySaver())
+                researcher_agent = build_research_graph(checkpointer=None)
 
                 threads = []
                 for tool_call in conduct_research_calls:
-                    child_config = {
-                        **config,
-                        "configurable": {
-                            **config.get("configurable", {}),
-                            "thread_id": f"researcher-{tool_call['id']}",
-                        }
-                    }
                     researcher_state = ResearcherState(
                         researcher_messages=[
                             HumanMessage(content=tool_call["args"]["research_topic"])
@@ -176,10 +166,7 @@ async def supervisor_tools(
                     )
 
                     # pyrefly: ignore [no-matching-overload]
-                    thread = researcher_agent.ainvoke(
-                        researcher_state,
-                        config=child_config
-                    )
+                    thread = researcher_agent.ainvoke(researcher_state, config=config)
                     threads.append(thread)
 
                 tool_results = await asyncio.gather(*threads)

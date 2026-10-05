@@ -70,6 +70,20 @@ class Configuration(FrozenBaseModel):
         reasoning_effort="high"
     )
 
+    supervisor_llm_config: LLMModelConfig = LLMModelConfig(
+        model=LLMModel.DEEPSEEK_V4_FLASH,
+        max_output_tokens=8192,
+        temperature=0.1,
+        reasoning_effort="high"
+    )
+
+    writer_llm_config: LLMModelConfig = LLMModelConfig(
+        model=LLMModel.DEEPSEEK_V4_FLASH,
+        max_output_tokens=64000,
+        temperature=0.1,
+        reasoning_effort="xhigh"
+    )
+
     @classmethod
     def from_runnable_config(cls, config: RunnableConfig | None = None) -> Configuration:
         configurable = config.get("configurable", {}) if config else {}
