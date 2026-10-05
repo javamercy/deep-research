@@ -4,7 +4,8 @@
     "."
   ],
   "graphs": {
-    "deep_research": "./src/deep_research/studio.py:graph"
+    "scoping_graph": "./src/deep_research/studio.py:scoping_graph",
+    "deep_research": "./src/deep_research/studio.py:deep_research_graph"
   },
   "env": ".env",
   "python_version": "3.13"

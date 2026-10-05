@@ -1,4 +1,6 @@
-CLARIFICATION_SYSTEM_PROMPT = """
+from typing import Final
+
+CLARIFICATION_SYSTEM_PROMPT: Final[str] = """
 <task>
 Assess whether you need to ask a clarifying question, or if the user has already provided enough information for you to start research.
 </task>
@@ -41,14 +43,14 @@ If you do not need to ask a clarifying question, return:
 </response_contract>
 """
 
-CLARIFICATION_USER_PROMPT = """
+CLARIFICATION_USER_PROMPT: Final[str] = """
 These are the messages that have been exchanged so far from the user asking for the report:
 <conversation_history>
 {messages}
 </conversation_history>
 """
 
-WRITE_RESEARCH_BRIEF_SYSTEM_PROMPT = """
+WRITE_RESEARCH_BRIEF_SYSTEM_PROMPT: Final[str] = """
 <task>
 You will be given a set of messages that have been exchanged so far between yourself and the user. 
 Your job is to translate these messages into a more detailed and concrete research question that will be used to guide the research.
