@@ -42,7 +42,7 @@ class Configuration(FrozenBaseModel):
 
     max_content_length: int = 50000
 
-    scoping_model_config: LLMModelConfig = LLMModelConfig(
+    scoping_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
         max_output_tokens=8192,
         temperature=0.1,
