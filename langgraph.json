@@ -5,6 +5,7 @@
   ],
   "graphs": {
     "scoping_graph": "./src/deep_research/studio.py:scoping_graph",
+    "research_graph": "./src/deep_research/studio.py:research_graph",
     "deep_research": "./src/deep_research/studio.py:deep_research_graph"
   },
   "env": ".env",

@@ -36,9 +36,9 @@ class Configuration(FrozenBaseModel):
 
     search_api: SearchAPI = SearchAPI.TAVILY
 
-    max_researcher_iterations: int = 10
+    max_researcher_iterations: int = 5
 
-    max_tool_calls_per_thread: int = 5
+    max_research_tool_calls: int = 5
 
     max_content_length: int = 50000
 
@@ -47,6 +47,27 @@ class Configuration(FrozenBaseModel):
         max_output_tokens=8192,
         temperature=0.1,
         reasoning_effort="medium"
+    )
+
+    research_llm_config: LLMModelConfig = LLMModelConfig(
+        model=LLMModel.DEEPSEEK_V4_FLASH,
+        max_output_tokens=8192,
+        temperature=0.1,
+        reasoning_effort="medium"
+    )
+
+    summarization_llm_config: LLMModelConfig = LLMModelConfig(
+        model=LLMModel.DEEPSEEK_V4_FLASH,
+        max_output_tokens=8192,
+        temperature=0.1,
+        reasoning_effort="high"
+    )
+
+    compression_llm_config: LLMModelConfig = LLMModelConfig(
+        model=LLMModel.DEEPSEEK_V4_FLASH,
+        max_output_tokens=8192,
+        temperature=0.1,
+        reasoning_effort="high"
     )
 
     @classmethod
