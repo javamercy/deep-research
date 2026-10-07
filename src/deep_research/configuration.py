@@ -28,6 +28,8 @@ class LLMModelConfig(FrozenBaseModel):
 
 
 class Configuration(FrozenBaseModel):
+    session_id: str | None = None
+
     max_structured_output_retries: int = 3
 
     allow_clarification: bool = True
@@ -92,4 +94,9 @@ class Configuration(FrozenBaseModel):
             field_name: os.getenv(field_name.upper(), configurable.get(field_name))
             for field_name in field_names
         }
+
+        thread_id = configurable.get("thread_id")
+        if thread_id is not None:
+            values["session_id"] = str(thread_id)
+
         return cls(**{key: value for key, value in values.items() if value is not None})

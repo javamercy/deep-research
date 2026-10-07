@@ -4,6 +4,8 @@ from langchain_core.tools import InjectedToolArg, tool
 from langgraph.prebuilt import ToolRuntime
 
 from deep_research.configuration import Configuration
+from deep_research.models import init_openrouter_structured_model
+from deep_research.schemas import ContentSummary
 from deep_research.search.processing import process_search_results
 from deep_research.search.tavily import tavily_search_multiple
 
@@ -29,6 +31,13 @@ async def tavily_search(
 
     configuration = Configuration.from_runnable_config(runtime.config)
 
+    summarization_model = init_openrouter_structured_model(
+        configuration.summarization_llm_config,
+        output_schema=ContentSummary,
+        max_retries=configuration.max_structured_output_retries,
+        session_id=configuration.session_id,
+    )
+
     unique_results = await tavily_search_multiple(
         search_queries=[query],
         max_results=max_results,
@@ -38,8 +47,7 @@ async def tavily_search(
 
     processed_results = await process_search_results(
         unique_results=unique_results,
-        llm_config=configuration.summarization_llm_config,
-        max_retries=configuration.max_structured_output_retries,
+        summarization_model=summarization_model,
         max_content_length=configuration.max_content_length,
     )
     return format_search_results(processed_results)

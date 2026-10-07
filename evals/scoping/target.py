@@ -1,9 +1,7 @@
-from uuid import uuid4
-
 from langchain_core.messages import convert_to_messages
-from langchain_core.runnables import RunnableConfig
 
 from deep_research.workflows.scoping import build_scoping_graph
+from evals.config import create_eval_config
 
 
 async def research_brief_target(inputs: dict) -> dict[str, object]:
@@ -13,7 +11,7 @@ async def research_brief_target(inputs: dict) -> dict[str, object]:
 
     messages = convert_to_messages(raw_messages)
 
-    config = RunnableConfig(configurable={"thread_id": uuid4()})
+    config = create_eval_config()
     graph = build_scoping_graph(checkpointer=None)
     result = await (
         graph.nodes["write_research_brief"]

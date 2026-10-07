@@ -33,7 +33,8 @@ async def clarify_with_user(
     clarification_model = init_openrouter_structured_model(
         configuration.scoping_llm_config,
         output_schema=ClarificationDecision,
-        max_retries=configuration.max_structured_output_retries
+        max_retries=configuration.max_structured_output_retries,
+        session_id=configuration.session_id
     )
 
     messages = [
@@ -71,7 +72,8 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> dic
     research_brief_model = init_openrouter_structured_model(
         configuration.scoping_llm_config,
         output_schema=ResearchQuestion,
-        max_retries=configuration.max_structured_output_retries
+        max_retries=configuration.max_structured_output_retries,
+        session_id=configuration.session_id
     )
 
     messages = [

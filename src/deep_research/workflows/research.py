@@ -45,7 +45,10 @@ async def conduct_research(state: ResearcherState, config: RunnableConfig) -> di
 
     configuration = Configuration.from_runnable_config(config)
     model_with_tools = (
-        init_openrouter_model(llm_config=configuration.research_llm_config)
+        init_openrouter_model(
+            llm_config=configuration.research_llm_config,
+            session_id=configuration.session_id
+        )
         .bind_tools(_tools)
     )
 
@@ -66,7 +69,10 @@ async def compress_research(state: ResearcherState, config: RunnableConfig) -> d
    """
 
     configuration = Configuration.from_runnable_config(config)
-    compress_model = init_openrouter_model(llm_config=configuration.compression_llm_config)
+    compress_model = init_openrouter_model(
+        llm_config=configuration.compression_llm_config,
+        session_id=configuration.session_id
+    )
 
     messages: list[BaseMessage] = [
         SystemMessage(content=COMPRESS_SYSTEM_PROMPT.format(date=get_today_str())),

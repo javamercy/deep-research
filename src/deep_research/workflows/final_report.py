@@ -18,7 +18,10 @@ async def generate_final_report(
     """
 
     configuration = Configuration.from_runnable_config(config)
-    writer_model = init_openrouter_model(llm_config=configuration.writer_llm_config)
+    writer_model = init_openrouter_model(
+        llm_config=configuration.writer_llm_config,
+        session_id=configuration.session_id
+    )
 
     notes = state["notes"]
     findings = "\n".join(notes)

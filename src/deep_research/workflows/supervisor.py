@@ -63,13 +63,16 @@ async def supervisor(
 
     configuration = Configuration.from_runnable_config(config)
     model_with_tools = (
-        init_openrouter_model(llm_config=configuration.scoping_llm_config)
+        init_openrouter_model(
+            llm_config=configuration.supervisor_llm_config,
+            session_id=configuration.session_id
+        )
         .bind_tools(_tools)
     )
 
     system_message = SUPERVISOR_SYSTEM_PROMPT.format(
         date=get_today_str(),
-        max_concurrent_research_units=config,
+        max_concurrent_research_units=configuration.max_concurrent_research_threads,
         max_researcher_iterations=configuration.max_researcher_iterations,
     )
     messages = [SystemMessage(content=system_message), *state["supervisor_messages"]]

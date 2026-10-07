@@ -4,6 +4,7 @@ import asyncio
 from dotenv import load_dotenv
 from langsmith import Client
 
+from evals.final_report.spec import create_final_report_spec
 from evals.research.suite import create_research_spec
 from evals.scoping.suite import creating_scoping_spec
 from evals.supervisor.suite import create_supervisor_spec
@@ -11,7 +12,8 @@ from evals.supervisor.suite import create_supervisor_spec
 SUITES = {
     "scoping": creating_scoping_spec,
     "research": create_research_spec,
-    "supervisor": create_supervisor_spec
+    "supervisor": create_supervisor_spec,
+    "final_report": create_final_report_spec
 }
 
 

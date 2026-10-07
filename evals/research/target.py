@@ -1,9 +1,7 @@
-from uuid import uuid4
-
 from langchain_core.messages import BaseMessage, convert_to_messages
-from langchain_core.runnables import RunnableConfig
 
 from deep_research.workflows.research import build_research_graph
+from evals.config import create_eval_config
 
 
 async def research_target(inputs: dict) -> dict[str, list[BaseMessage]]:
@@ -13,7 +11,7 @@ async def research_target(inputs: dict) -> dict[str, list[BaseMessage]]:
 
     messages = convert_to_messages(raw_messages)
 
-    config = RunnableConfig(configurable={"thread_id": uuid4()})
+    config = create_eval_config()
     graph = build_research_graph(checkpointer=None)
     result = await (
         graph.nodes["conduct_research"]

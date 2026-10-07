@@ -1,5 +1,7 @@
+from langchain_core.language_models import LanguageModelInput
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import EvaluationResult
+from langsmith.schemas import Run
 
 from deep_research.configuration import LLMModelConfig
 from deep_research.models import init_openrouter_structured_model
@@ -11,17 +13,18 @@ from evals.types import EvaluatorFunc
 def create_research_brief_evaluators(judge_config: LLMModelConfig) -> list[EvaluatorFunc]:
     criteria_judge = init_openrouter_structured_model(
         llm_config=judge_config,
-        output_schema=CriteriaEvaluation,
+        output_schema=CriteriaEvaluation
     )
 
     groundedness_judge = init_openrouter_structured_model(
         llm_config=judge_config,
-        output_schema=ResearchBriefGroundednessEvaluation,
+        output_schema=ResearchBriefGroundednessEvaluation
     )
 
     async def research_brief_criteria_evaluator(
             outputs: dict,
-            reference_outputs: dict
+            reference_outputs: dict,
+            run: Run
     ) -> EvaluationResult:
         research_brief = outputs.get("research_brief")
         criteria = reference_outputs.get("criteria")
@@ -29,14 +32,23 @@ def create_research_brief_evaluators(judge_config: LLMModelConfig) -> list[Evalu
         if not isinstance(criteria, list):
             raise TypeError("Reference outputs must contain a list of criteria strings.")
 
-        responses = await criteria_judge.abatch([
+        session_id = run.metadata.get("session_id", run.id)
+
+        batch_messages: list[LanguageModelInput] = [
             [
                 SystemMessage(content=BRIEF_CRITERIA_SYSTEM_PROMPT),
                 HumanMessage(content=BRIEF_CRITERIA_USER_PROMPT.format(
                     research_brief=research_brief,
                     criterion=criterion))
             ]
-            for criterion in criteria])
+            for criterion in criteria
+        ]
+
+        responses = await (
+            criteria_judge
+            .bind(session_id=session_id)
+            .abatch(batch_messages)
+        )
 
         individual_evaluations = [
             CriteriaEvaluation(
@@ -55,7 +67,7 @@ def create_research_brief_evaluators(judge_config: LLMModelConfig) -> list[Evalu
             key="research_brief_criteria_evaluation",
             score=score,
             comment=f"Captured {captured_count}/{len(criteria)} criteria.",
-            extra={"individual_evaluations": [
+            metadata={"individual_evaluations": [
                 {
                     "criterion": eval_result.criterion,
                     "captured": eval_result.captured,
@@ -67,7 +79,8 @@ def create_research_brief_evaluators(judge_config: LLMModelConfig) -> list[Evalu
 
     async def research_brief_groundedness_evaluator(
             outputs: dict,
-            reference_outputs: dict
+            reference_outputs: dict,
+            run: Run
     ) -> EvaluationResult:
         research_brief = outputs.get("research_brief")
         criteria = reference_outputs.get("criteria")
@@ -75,13 +88,21 @@ def create_research_brief_evaluators(judge_config: LLMModelConfig) -> list[Evalu
         if not isinstance(criteria, list):
             raise TypeError("Reference outputs must contain a list of criteria strings.")
 
-        response = await groundedness_judge.ainvoke([
+        session_id = str(run.metadata.get("thread_id", run.id))
+
+        messages = [
             SystemMessage(content=BRIEF_GROUNDEDNESS_SYSTEM_PROMPT),
             HumanMessage(
                 content=BRIEF_GROUNDEDNESS_USER_PROMPT
                 .format(research_brief=research_brief, criteria=criteria)
             )
-        ])
+        ]
+
+        response = await (
+            groundedness_judge
+            .bind(session_id=session_id)
+            .ainvoke(messages)
+        )
 
         return EvaluationResult(
             key="research_brief_groundedness_evaluation",
