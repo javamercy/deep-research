@@ -23,7 +23,7 @@ class CriteriaEvaluation(FrozenBaseModel):
     )
 
 
-class BriefGroundednessEvaluation(FrozenBaseModel):
+class ResearchBriefGroundednessEvaluation(FrozenBaseModel):
     """
         Overall research brief groundedness evaluation result.
 
