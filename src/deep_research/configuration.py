@@ -15,9 +15,10 @@ class SearchAPI(StrEnum):
 
 
 class LLMModel(StrEnum):
-    DEEPSEEK_V4_FLASH = "deepseek/deepseek-v4-flash-0731"
+    DEEPSEEK_V4_FLASH = "deepseek/deepseek-v4-flash-0731:floor"
+    DEEPSEEK_V4_1_FLASH = "deepseek/deepseek-v4.1-flash:floor"
     NEMOTRON_3_SUPER_FREE = "nvidia/nemotron-3-super-120b-a12b:free"
-    GLM_5_3_FLASH = "z-ai/glm-5.3-flash"
+    GLM_5_3_FLASH = "z-ai/glm-5.3-flash:floor"
 
 
 class LLMModelConfig(FrozenBaseModel):
