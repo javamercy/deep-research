@@ -29,26 +29,40 @@ def create_research_brief_evaluators(judge_config: LLMModelConfig) -> list[Evalu
         research_brief = outputs.get("research_brief")
         criteria = reference_outputs.get("criteria")
 
-        if not isinstance(criteria, list):
-            raise TypeError("Reference outputs must contain a list of criteria strings.")
+        if not criteria or not isinstance(criteria, list):
+            raise ValueError("Missing or invalid 'criteria' in reference outputs")
 
-        session_id = run.metadata.get("session_id", run.id)
+        if len(criteria) == 0:
+            raise ValueError("Reference outputs must contain at least one criterion.")
+
+        session_id = str(run.metadata.get("thread_id", run.id))
 
         batch_messages: list[LanguageModelInput] = [
             [
                 SystemMessage(content=BRIEF_CRITERIA_SYSTEM_PROMPT),
-                HumanMessage(content=BRIEF_CRITERIA_USER_PROMPT.format(
-                    research_brief=research_brief,
-                    criterion=criterion))
+                HumanMessage(
+                    content=BRIEF_CRITERIA_USER_PROMPT.format(research_brief=research_brief)
+                ),
+                HumanMessage(
+                    content=f"<criterion_to_evaluate>\n{criterion}\n</criterion_to_evaluate>"
+                )
             ]
             for criterion in criteria
         ]
 
-        responses = await (
+        first = await (
             criteria_judge
             .bind(session_id=session_id)
-            .abatch(batch_messages)
+            .ainvoke(batch_messages[0])
         )
+
+        remaining = await (
+            criteria_judge
+            .bind(session_id=session_id)
+            .abatch(batch_messages[1:], config={"max_concurrency": 4})
+        )
+
+        responses = [first, *remaining]
 
         individual_evaluations = [
             CriteriaEvaluation(
@@ -88,13 +102,18 @@ def create_research_brief_evaluators(judge_config: LLMModelConfig) -> list[Evalu
         if not isinstance(criteria, list):
             raise TypeError("Reference outputs must contain a list of criteria strings.")
 
+        if len(criteria) == 0:
+            raise ValueError("Reference outputs must contain at least one criterion.")
+
         session_id = str(run.metadata.get("thread_id", run.id))
 
         messages = [
             SystemMessage(content=BRIEF_GROUNDEDNESS_SYSTEM_PROMPT),
             HumanMessage(
-                content=BRIEF_GROUNDEDNESS_USER_PROMPT
-                .format(research_brief=research_brief, criteria=criteria)
+                content=BRIEF_GROUNDEDNESS_USER_PROMPT.format(research_brief=research_brief)
+            ),
+            HumanMessage(
+                content=f"<criteria_to_evaluate>\n{criteria}\n</criteria_to_evaluate>"
             )
         ]
 

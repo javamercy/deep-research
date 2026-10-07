@@ -62,10 +62,6 @@ Evaluate whether the following research brief captures the specified criterion.
 <research_brief>
 {research_brief}
 </research_brief>
-
-<criterion_to_evaluate>
-{criterion}
-</criterion_to_evaluate>
 """
 
 BRIEF_GROUNDEDNESS_SYSTEM_PROMPT = """
@@ -128,8 +124,4 @@ Evaluate whether the following research brief contains any unwarranted assumptio
 <research_brief>
 {research_brief}
 </research_brief>
-
-<criteria_to_evaluate>
-{criteria}
-</criteria_to_evaluate>
 """

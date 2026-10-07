@@ -44,10 +44,18 @@ def create_final_report_evaluators(judge_config: LLMModelConfig) -> list[Evaluat
             ]
             for requirement in requirements
         ]
-        responses = await (
+
+        first = await (
             structured_judge
             .bind(session_id=session_id)
-            .abatch(batch_messages))
+            .ainvoke(batch_messages[0])
+        )
+        remaining = await (
+            structured_judge
+            .bind(session_id=session_id)
+            .abatch(batch_messages[1:], config={"max_concurrency": 4})
+        )
+        responses = [first, *remaining]
 
         total_score = 0
         individual_evaluations = []
