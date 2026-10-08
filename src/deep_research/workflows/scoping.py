@@ -2,22 +2,25 @@ from typing import Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, get_buffer_string
 from langchain_core.runnables import RunnableConfig
-from langgraph.constants import END, START
+from langgraph.constants import START
 from langgraph.graph import StateGraph
 from langgraph.types import Checkpointer, Command, interrupt
 
 from deep_research.configuration import Configuration
 from deep_research.models import init_openrouter_structured_model
-from deep_research.prompts.scoping import CLARIFICATION_SYSTEM_PROMPT, CLARIFICATION_USER_PROMPT, RESEARCH_PLANNING_SYSTEM_PROMPT, RESEARCH_PLANNING_USER_PROMPT, WRITE_RESEARCH_BRIEF_SYSTEM_PROMPT, WRITE_RESEARCH_BRIEF_USER_PROMPT
-from deep_research.schemas import ClarificationDecision, ResearchPlan, ResearchPlanReview, ResearchQuestion
+from deep_research.prompts.scoping import CLARIFICATION_SYSTEM_PROMPT, CLARIFICATION_USER_PROMPT, \
+    RESEARCH_PLANNING_SYSTEM_PROMPT, RESEARCH_PLANNING_USER_PROMPT, WRITE_RESEARCH_BRIEF_SYSTEM_PROMPT, \
+    WRITE_RESEARCH_BRIEF_USER_PROMPT
+from deep_research.schemas import ClarificationDecision, ResearchPlan, ResearchPlanReview, ResearchQuestion, \
+    ClarificationAnswer
 from deep_research.state import AgentInputState, AgentState
 from deep_research.utils import get_today_str
 
 
-async def clarify_with_user(
+async def assess_clarification(
         state: AgentState,
         config: RunnableConfig
-) -> Command[Literal["write_research_brief", "__end__"]]:
+) -> Command[Literal["ask_clarification", "write_research_brief"]]:
     """
     Determine if the user's request contains sufficient information to proceed with research.
 
@@ -49,14 +52,33 @@ async def clarify_with_user(
 
     if response.need_clarification:
         return Command(
-            goto=END,
-            update={"messages": [AIMessage(content=response.question)]}
+            goto="ask_clarification",
+            update={"clarification_question": response.question}
         )
     else:
         return Command(
             goto="write_research_brief",
             update={"messages": [AIMessage(content=response.verification)]}
         )
+
+
+def ask_clarification(state: AgentState) -> dict:
+    question = state["clarification_question"]
+
+    answer = interrupt(
+        {
+            "type": "clarification",
+            "question": question,
+        },
+        response_schema=ClarificationAnswer
+    )
+
+    return {
+        "messages": [
+            AIMessage(content=question),
+            HumanMessage(content=answer.answer)
+        ],
+    }
 
 
 async def write_research_brief(state: AgentState, config: RunnableConfig) -> dict:
@@ -77,9 +99,10 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> dic
     )
 
     messages = [
-        SystemMessage(content=WRITE_RESEARCH_BRIEF_SYSTEM_PROMPT.format(
-            date=get_today_str()
-        )),
+        SystemMessage(
+            content=WRITE_RESEARCH_BRIEF_SYSTEM_PROMPT.format(
+                date=get_today_str()
+            )),
         HumanMessage(content=WRITE_RESEARCH_BRIEF_USER_PROMPT.format(
             messages=get_buffer_string(state["messages"])
         ))
@@ -172,12 +195,14 @@ def build_scoping_graph(checkpointer: Checkpointer):
         input_schema=AgentInputState,
     )
 
-    builder.add_node("clarify_with_user", clarify_with_user)
+    builder.add_node("assess_clarification", assess_clarification)
+    builder.add_node("ask_clarification", ask_clarification)
     builder.add_node("write_research_brief", write_research_brief)
     builder.add_node("create_plan", create_plan)
     builder.add_node("review_plan", review_plan)
 
-    builder.add_edge(START, "clarify_with_user")
+    builder.add_edge(START, "assess_clarification")
+    builder.add_edge("ask_clarification", "assess_clarification")
     builder.add_edge("write_research_brief", "create_plan")
     builder.add_edge("create_plan", "review_plan")
 

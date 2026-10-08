@@ -29,6 +29,12 @@ class ClarificationDecision(FrozenBaseModel):
     )
 
 
+class ClarificationAnswer(FrozenBaseModel):
+    """Answer to a clarification question."""
+
+    answer: str
+
+
 class ResearchQuestion(FrozenBaseModel):
     """Schema for structured research brief generation."""
 

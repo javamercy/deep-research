@@ -22,6 +22,9 @@ class AgentState(MessagesState):
     state management between subgraphs and the main workflow.
     """
 
+    # Response from AI agent asking for clarification on the user's request
+    clarification_question: NotRequired[str]
+
     # Research brief generated from user conversation history
     research_brief: NotRequired[str]
 
