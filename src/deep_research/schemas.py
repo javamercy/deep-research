@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -40,3 +42,36 @@ class ContentSummary(FrozenBaseModel):
 
     summary: str = Field(description="Concise summary of the webpage content")
     key_excerpts: str = Field(description="Important quotes and excerpts from the content")
+
+
+class ResearchTask(BaseModel):
+    """Schema for structured research task generation."""
+
+    id: str = Field(
+        description="A unique identifier for the research task. Should be related to the research objective.",
+    )
+    objective: str = Field(
+        description="A detailed research objective that outlines the goal of the research task.",
+    )
+    success_criteria: str = Field(
+        description="The criteria that will be used to determine if the research objective was met.",
+    )
+    status: Literal["pending", "in_progress", "completed"] = Field(
+        default="pending",
+        description="The current status of the research task. Can be 'pending', 'in_progress', or 'completed'.",
+    )
+
+
+class ResearchPlan(FrozenBaseModel):
+    """Schema for structured research plan generation."""
+
+    tasks: list[ResearchTask] = Field(
+        description="A list of research tasks that will be executed to achieve the research.",
+    )
+
+
+class ResearchPlanReview(FrozenBaseModel):
+    """Schema for structured research plan review."""
+
+    approved: bool
+    feedback: str = ""

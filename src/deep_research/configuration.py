@@ -35,6 +35,10 @@ class Configuration(FrozenBaseModel):
 
     allow_clarification: bool = True
 
+    allow_collaborative_planning: bool = True
+
+    max_planning_iterations: int = 3
+    
     max_concurrent_research_threads: int = 5
 
     search_api: SearchAPI = SearchAPI.TAVILY

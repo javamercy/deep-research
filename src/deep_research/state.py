@@ -5,6 +5,8 @@ from typing import Annotated, NotRequired, TypedDict
 from langchain_core.messages import BaseMessage
 from langgraph.graph import MessagesState, add_messages
 
+from deep_research.schemas import ResearchPlan
+
 
 class AgentInputState(MessagesState):
     """Input state for the full agent - only contains messages from user input."""
@@ -22,6 +24,18 @@ class AgentState(MessagesState):
 
     # Research brief generated from user conversation history
     research_brief: NotRequired[str]
+
+    # Research plan generated from the research brief and user input
+    research_plan: NotRequired[ResearchPlan]
+
+    # Feedback from the user on the research plan
+    plan_feedback: NotRequired[str]
+
+    # User decision on whether to approve or revise the research plan
+    plan_approved: NotRequired[bool]
+
+    # Counter tracking the number of planning iterations performed
+    planning_iterations: int
 
     # Messages exchanged with the supervisor agent for coordination
     supervisor_messages: Annotated[Sequence[BaseMessage], add_messages]

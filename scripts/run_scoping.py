@@ -1,13 +1,13 @@
-from typing import cast
 from uuid import uuid4
 
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command
 from rich.console import Console
 
-from deep_research.state import AgentInputState, AgentState
+from deep_research.state import AgentInputState
 from deep_research.utils import display_markdown, display_messages
 from deep_research.workflows.scoping import build_scoping_graph
 
@@ -23,12 +23,7 @@ async def main():
         ]
     )
     graph = build_scoping_graph(checkpointer=InMemorySaver())
-    result = cast(
-        AgentState,
-        # TODO: see workflows/scoping.py
-        # pyrefly: ignore [no-matching-overload]
-        await graph.ainvoke(input=input_state, config=config)
-    )
+    result = await graph.ainvoke(input=input_state, config=config)
 
     console = Console()
 
@@ -42,12 +37,44 @@ async def main():
         ]
     )
 
-    result = cast(
-        AgentState,
-        # TODO: see workflows/scoping.py
-        # pyrefly: ignore [no-matching-overload]
-        await graph.ainvoke(input=input_state, config=config)
-    )
+    result = await graph.ainvoke(input=input_state, config=config)
+
+    while interrupts := result.get("__interrupt__"):
+        request = interrupts[0].value
+        options = request["options"]
+
+        feedback = ""
+        while True:
+            action = (
+                await asyncio.to_thread(
+                    console.input, f"Choose an action {options}: "
+                )
+            ).strip().lower()
+
+            if action not in options:
+                console.print("Invalid decision.")
+                continue
+
+            if action == "revise":
+                feedback = await asyncio.to_thread(
+                    console.input, "Revision feedback: "
+                ).strip()
+
+            if not feedback:
+                console.print("Please provide feedback for revision.")
+                continue
+
+            break
+
+        result = await graph.ainvoke(
+            Command(
+                resume={
+                    "action": action,
+                    "feedback": feedback
+                }
+            ),
+            config=config
+        )
 
     display_messages(result["messages"], console=console)
     display_markdown(result["research_brief"], console=console)
