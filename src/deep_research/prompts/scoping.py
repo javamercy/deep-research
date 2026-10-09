@@ -342,7 +342,7 @@ If RESEARCH PLAN exists and USER FEEDBACK is provided:
 
 <output_requirements>
 - Every research task should have a unique identifier that is related to the research objective.
-<output_requirements>
+</output_requirements>
 """
 
 RESEARCH_PLANNING_USER_PROMPT = """

@@ -26,6 +26,7 @@ class LLMModelConfig(FrozenBaseModel):
     max_output_tokens: int
     temperature: float | None = None
     reasoning_effort: str | None = None
+    ignored_providers: list[str] = ["open-inference"]
 
 
 class Configuration(FrozenBaseModel):
@@ -38,7 +39,7 @@ class Configuration(FrozenBaseModel):
     allow_collaborative_planning: bool = True
 
     max_planning_iterations: int = 3
-    
+
     max_concurrent_research_threads: int = 5
 
     search_api: SearchAPI = SearchAPI.TAVILY
@@ -50,45 +51,33 @@ class Configuration(FrozenBaseModel):
     max_content_length: int = 50000
 
     scoping_llm_config: LLMModelConfig = LLMModelConfig(
-        model=LLMModel.DEEPSEEK_V4_FLASH,
+        model=LLMModel.GLM_5_3_FLASH,
         max_output_tokens=8192,
-        temperature=0.1,
-        reasoning_effort="medium"
     )
 
     research_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
         max_output_tokens=8192,
-        temperature=0.1,
-        reasoning_effort="medium"
     )
 
     summarization_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
         max_output_tokens=8192,
-        temperature=0.1,
-        reasoning_effort="high"
     )
 
     compression_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
         max_output_tokens=8192,
-        temperature=0.1,
-        reasoning_effort="high"
     )
 
     supervisor_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
         max_output_tokens=8192,
-        temperature=0.1,
-        reasoning_effort="high"
     )
 
     writer_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
         max_output_tokens=64000,
-        temperature=0.1,
-        reasoning_effort="xhigh"
     )
 
     @classmethod

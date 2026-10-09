@@ -26,7 +26,10 @@ def init_openrouter_model(
         model=llm_config.model.value,
         temperature=llm_config.temperature,
         max_completion_tokens=llm_config.max_output_tokens,
-        openrouter_provider={"require_parameters": True},
+        openrouter_provider={
+            "ignore": llm_config.ignored_providers,
+            "require_parameters": True
+        },
         reasoning=reasoning,
         max_retries=0,
         **session_kwargs

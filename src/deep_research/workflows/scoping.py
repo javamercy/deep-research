@@ -8,11 +8,8 @@ from langgraph.types import Checkpointer, Command, interrupt
 
 from deep_research.configuration import Configuration
 from deep_research.models import init_openrouter_structured_model
-from deep_research.prompts.scoping import CLARIFICATION_SYSTEM_PROMPT, CLARIFICATION_USER_PROMPT, \
-    RESEARCH_PLANNING_SYSTEM_PROMPT, RESEARCH_PLANNING_USER_PROMPT, WRITE_RESEARCH_BRIEF_SYSTEM_PROMPT, \
-    WRITE_RESEARCH_BRIEF_USER_PROMPT
-from deep_research.schemas import ClarificationDecision, ResearchPlan, ResearchPlanReview, ResearchQuestion, \
-    ClarificationAnswer
+from deep_research.prompts.scoping import CLARIFICATION_SYSTEM_PROMPT, CLARIFICATION_USER_PROMPT, RESEARCH_PLANNING_SYSTEM_PROMPT, RESEARCH_PLANNING_USER_PROMPT, WRITE_RESEARCH_BRIEF_SYSTEM_PROMPT, WRITE_RESEARCH_BRIEF_USER_PROMPT
+from deep_research.schemas import ClarificationAnswer, ClarificationDecision, ResearchPlan, ResearchPlanReview, ResearchQuestion
 from deep_research.state import AgentInputState, AgentState
 from deep_research.utils import get_today_str
 
