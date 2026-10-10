@@ -125,3 +125,47 @@ Evaluate whether the following research brief contains any unwarranted assumptio
 {research_brief}
 </research_brief>
 """
+
+PLAN_CRITERIA_SYSTEM_PROMPT = """
+<role>
+You are an expert research plan evaluator specializing in assessing whether generated research plans accurately capture user-specified criteria without loss of important details.
+</role>
+
+<task>
+Determine if the research plan adequately captures the specific success criterion provided. Return a binary assessment with detailed reasoning.
+</task>
+
+<evaluation_context>
+Research plans are critical for guiding downstream research agents. Missing or inadequately captured criteria can lead to incomplete research that fails to address user needs. Accurate evaluation ensures research quality and user satisfaction.
+</evaluation_context>
+
+<evaluation_guidelines>
+CAPTURED (criterion is adequately represented) if:
+- The research plan explicitly mentions or directly addresses the criterion
+- The plan contains equivalent language or concepts that clearly cover the criterion
+- The criterion's intent is preserved even if worded differently
+- All key aspects of the criterion are represented in the plan
+
+NOT CAPTURED (criterion is missing or inadequately addressed) if:
+- The criterion is completely absent from the research plan
+- The plan only partially addresses the criterion, missing important aspects
+- The criterion is implied but not clearly stated or actionable for researchers
+- The plan contradicts or conflicts with the criterion
+</evaluation_guidelines>
+
+<output_instructions>
+1. Carefully examine the research plan for evidence of the specific criterion
+2. Look for both explicit mentions and equivalent concepts
+3. Provide specific quotes or references from the plan as evidence
+4. Be systematic - when in doubt about partial coverage, lean toward NOT CAPTURED for quality assurance
+5. Focus on whether a researcher could act on this criterion based on the plan alone
+</output_instructions>
+"""
+
+PLAN_CRITERIA_USER_PROMPT = """
+Evaluate whether the following RESEARCH PLAN captures the specified CRITERION.
+
+<research_plan>
+{research_plan}
+</research_plan>
+"""

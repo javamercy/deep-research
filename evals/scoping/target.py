@@ -4,7 +4,7 @@ from deep_research.workflows.scoping import build_scoping_graph
 from evals.config import create_eval_config
 
 
-async def research_brief_target(inputs: dict) -> dict[str, object]:
+async def brief_target(inputs: dict) -> dict[str, object]:
     raw_messages = inputs.get("messages")
     if not raw_messages or not isinstance(raw_messages, list):
         raise TypeError("Input 'messages' must be a list of message dictionaries.")
@@ -19,3 +19,18 @@ async def research_brief_target(inputs: dict) -> dict[str, object]:
     )
 
     return {"research_brief": result["research_brief"]}
+
+
+async def plan_target(inputs: dict) -> dict[str, object]:
+    research_brief = inputs.get("research_brief")
+    if not research_brief:
+        raise ValueError("Input 'research_brief' is required.")
+
+    config = create_eval_config(allow_collaborative_planning=False)
+    graph = build_scoping_graph(checkpointer=None)
+    result = await (
+        graph.nodes["create_plan"]
+        .ainvoke({"research_brief": research_brief}, config=config)
+    )
+
+    return {"research_plan": result["research_plan"]}

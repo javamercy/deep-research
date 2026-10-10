@@ -3,7 +3,7 @@ from pydantic import Field
 from deep_research.schemas import FrozenBaseModel
 
 
-class CriteriaEvaluation(FrozenBaseModel):
+class BriefCriteriaEvaluation(FrozenBaseModel):
     """
         Individual success criterion evaluation result.
 
@@ -23,7 +23,7 @@ class CriteriaEvaluation(FrozenBaseModel):
     )
 
 
-class ResearchBriefGroundednessEvaluation(FrozenBaseModel):
+class BriefGroundednessEvaluation(FrozenBaseModel):
     """
         Overall research brief groundedness evaluation result.
 
@@ -37,4 +37,24 @@ class ResearchBriefGroundednessEvaluation(FrozenBaseModel):
     )
     passes: bool = Field(
         description="Whether the research brief is adequately grounded in the provided context (True) or not (False)"
+    )
+
+
+class PlanCriteriaEvaluation(FrozenBaseModel):
+    """
+        Individual success criterion evaluation result.
+
+        This model represents a single evaluation criterion that should be present
+        in the research plan, along with a detailed assessment of whether it was
+        successfully captured and the reasoning behind that assessment.
+    """
+
+    criterion: str = Field(
+        description="The specific success criterion being evaluated."
+    )
+    reasoning: str = Field(
+        description="Detailed explanation of why this criterion is or isn't captured in the research plan, including specific evidence from the plan"
+    )
+    captured: bool = Field(
+        description="Whether this specific criterion is adequately captured in the research plan (True) or missing/inadequately addressed (False)"
     )

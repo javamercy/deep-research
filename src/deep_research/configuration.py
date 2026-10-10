@@ -51,7 +51,7 @@ class Configuration(FrozenBaseModel):
     max_content_length: int = 50000
 
     scoping_llm_config: LLMModelConfig = LLMModelConfig(
-        model=LLMModel.GLM_5_3_FLASH,
+        model=LLMModel.DEEPSEEK_V4_FLASH,
         max_output_tokens=8192,
     )
 
