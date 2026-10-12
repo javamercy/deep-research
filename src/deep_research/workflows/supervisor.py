@@ -1,8 +1,10 @@
 import asyncio
+import logging
 from collections.abc import Sequence
 from typing import Literal, cast
+from xml.etree import ElementTree
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage, filter_messages
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolCall, ToolMessage, filter_messages
 from langchain_core.runnables import RunnableConfig
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph
@@ -10,14 +12,16 @@ from langgraph.types import Checkpointer, Command
 
 from deep_research.configuration import Configuration
 from deep_research.models import init_openrouter_model
-from deep_research.prompts.supervisor import SUPERVISOR_SYSTEM_PROMPT
+from deep_research.prompts.supervisor import SUPERVISOR_SYSTEM_PROMPT, SUPERVISOR_USER_PROMPT
+from deep_research.schemas import ResearchPlan, ResearchTask
 from deep_research.state import ResearcherState, SupervisorState
-from deep_research.tools.reflection import think_tool
-from deep_research.tools.supervisor import ConductResearch, ResearchComplete
+from deep_research.tools.supervisor import ConductResearch, ResearchComplete, UpdateResearchPlan
 from deep_research.utils import get_today_str
 from deep_research.workflows.research import build_research_graph
 
-_tools = [ConductResearch, ResearchComplete, think_tool]
+logger = logging.getLogger(__name__)
+
+TOOLS = [ConductResearch, UpdateResearchPlan, ResearchComplete]
 
 
 def get_notes_from_tool_calls(messages: Sequence[BaseMessage]) -> list[str]:
@@ -44,12 +48,13 @@ def get_notes_from_tool_calls(messages: Sequence[BaseMessage]) -> list[str]:
 
 async def supervisor(
         state: SupervisorState,
-        config: RunnableConfig
-) -> Command[Literal["supervisor_tools"]]:
+        config: RunnableConfig,
+) -> dict:
     """Coordinate research activities.
 
-    Analyzes the research brief and current progress to decide:
-    - What research topics need investigation
+    Analyzes the research plan to decide:
+    - What tasks need investigation
+    - What tasks need updates or revisions
     - Whether to conduct parallel research
     - When research is complete
 
@@ -58,7 +63,7 @@ async def supervisor(
         config: Runnable configuration for managing sub-agent execution
 
     Returns:
-        Command to proceed to supervisor_tools node with updated state
+        Updated state with supervisor messages and iteration count
     """
 
     configuration = Configuration.from_runnable_config(config)
@@ -67,25 +72,31 @@ async def supervisor(
             llm_config=configuration.supervisor_llm_config,
             session_id=configuration.session_id
         )
-        .bind_tools(_tools)
+        .bind_tools(TOOLS)
     )
 
-    system_message = SUPERVISOR_SYSTEM_PROMPT.format(
-        date=get_today_str(),
-        max_concurrent_research_units=configuration.max_concurrent_research_threads,
-        max_researcher_iterations=configuration.max_researcher_iterations,
-    )
-    messages = [SystemMessage(content=system_message), *state["supervisor_messages"]]
+    messages = [
+        SystemMessage(
+            content=SUPERVISOR_SYSTEM_PROMPT.format(
+                date=get_today_str(),
+                max_concurrent_research_threads=configuration.max_concurrent_research_threads,
+                max_researcher_iterations=configuration.max_researcher_iterations,
+            )
+        ),
+        HumanMessage(
+            content=SUPERVISOR_USER_PROMPT.format(
+                research_plan=research_plan_to_xml(state["research_plan"])
+            )
+        ),
+        *state.get("supervisor_messages", [])
+    ]
 
     response = await model_with_tools.ainvoke(messages)
 
-    return Command(
-        goto="supervisor_tools",
-        update={
-            "supervisor_messages": response,
-            "research_iterations": state.get("research_iterations", 0) + 1,
-        },
-    )
+    return {
+        "supervisor_messages": response,
+        "research_iterations": state.get("research_iterations", 0) + 1,
+    }
 
 
 async def supervisor_tools(
@@ -108,6 +119,8 @@ async def supervisor_tools(
        Command to continue supervision, end process, or handle errors
     """
 
+    # TODO: Exception handling for tool execution failures, including logging and fallback strategies
+
     configuration = Configuration.from_runnable_config(config)
     max_researcher_iterations = configuration.max_researcher_iterations
 
@@ -116,42 +129,46 @@ async def supervisor_tools(
     last_message = cast(AIMessage, supervisor_messages[-1])
     tool_calls = last_message.tool_calls
 
+    research_plan = state["research_plan"]
     tool_messages: list[ToolMessage] = []
     all_raw_notes: list[str] = []
+
     next_step = "supervisor"
     should_end = False
 
-    iterations_exceeded = research_iterations >= max_researcher_iterations
     research_complete = any(
         call["name"] == "ResearchComplete"
         for call in tool_calls
     )
-
+    iterations_exceeded = research_iterations >= max_researcher_iterations
     if iterations_exceeded or research_complete or not tool_calls:
         should_end = True
         next_step = END
-
     else:
         try:
-            think_tool_calls = [
-                tool_call for tool_call in tool_calls
-                if tool_call["name"] == "think_tool"
-            ]
+            update_plan_calls, conduct_research_calls = (
+                collect_tool_calls_from_supervisor_message(tool_calls)
+            )
 
-            conduct_research_calls = [
-                tool_call for tool_call in tool_calls
-                if tool_call["name"] == "ConductResearch"
-            ]
+            updated_tasks = list(research_plan.tasks)
+            for tool_call in update_plan_calls:
+                for raw_update in tool_call["args"]["task_updates"]:
+                    task_update = ResearchTask.model_validate(raw_update)
 
-            for tool_call in think_tool_calls:
-                observation = await think_tool.ainvoke(tool_call["args"])
+                    for i, task in enumerate(updated_tasks):
+                        if task.id == task_update.id:
+                            updated_tasks[i] = task_update
+                            break
+
                 tool_messages.append(
                     ToolMessage(
-                        content=observation,
-                        tool_name="think_tool",
+                        content=tool_call["args"]["summary"],
+                        name=tool_call["name"],
                         tool_call_id=tool_call["id"]
                     )
                 )
+
+            research_plan = ResearchPlan(tasks=updated_tasks)
 
             if conduct_research_calls:
                 researcher_agent = build_research_graph(checkpointer=None)
@@ -190,10 +207,9 @@ async def supervisor_tools(
                     for result in tool_results
                 ]
 
-        except Exception as e:
-            print(f"Error in supervisor tools: {e}")
-            should_end = True
-            next_step = END
+        except Exception:
+            logger.error("Error during supervisor tool execution")
+            raise
 
     if should_end:
         return Command(
@@ -207,10 +223,46 @@ async def supervisor_tools(
     return Command(
         goto=next_step,
         update={
+            "research_plan": research_plan,
             "supervisor_messages": tool_messages,
             "raw_notes": all_raw_notes,
         }
     )
+
+
+def research_plan_to_xml(plan: ResearchPlan) -> str:
+    """Convert a ResearchPlan object to an XML string representation."""
+
+    root = ElementTree.Element("research_plan")
+    tasks_element = ElementTree.SubElement(root, "tasks")
+
+    for i, task in enumerate(plan.tasks, start=1):
+        task_element = ElementTree.SubElement(tasks_element, "task", attrib={"index": str(i)})
+        ElementTree.SubElement(task_element, "id").text = task.id
+        ElementTree.SubElement(task_element, "objective").text = task.objective
+        ElementTree.SubElement(task_element, "success_criteria").text = task.success_criteria
+        ElementTree.SubElement(task_element, "status").text = task.status
+
+    ElementTree.indent(root, space="  ")
+    return ElementTree.tostring(root, encoding="unicode", short_empty_elements=False)
+
+
+def collect_tool_calls_from_supervisor_message(
+        tool_calls: list[ToolCall]
+) -> tuple[list[ToolCall], list[ToolCall]]:
+    """Collect tool calls from the supervisor's last message."""
+
+    update_plan_calls = [
+        tool_call for tool_call in tool_calls
+        if tool_call["name"] == "UpdateResearchPlan"
+    ]
+
+    conduct_research_calls = [
+        tool_call for tool_call in tool_calls
+        if tool_call["name"] == "ConductResearch"
+    ]
+
+    return update_plan_calls, conduct_research_calls
 
 
 def build_supervisor_graph(checkpointer: Checkpointer):
@@ -220,6 +272,8 @@ def build_supervisor_graph(checkpointer: Checkpointer):
     builder = StateGraph(SupervisorState)
     builder.add_node("supervisor", supervisor)
     builder.add_node("supervisor_tools", supervisor_tools)
+
     builder.add_edge(START, "supervisor")
+    builder.add_edge("supervisor", "supervisor_tools")
 
     return builder.compile(checkpointer=checkpointer)

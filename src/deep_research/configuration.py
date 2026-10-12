@@ -62,12 +62,12 @@ class Configuration(FrozenBaseModel):
 
     summarization_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
-        max_output_tokens=8192,
+        max_output_tokens=16000,
     )
 
     compression_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
-        max_output_tokens=8192,
+        max_output_tokens=16000,
     )
 
     supervisor_llm_config: LLMModelConfig = LLMModelConfig(

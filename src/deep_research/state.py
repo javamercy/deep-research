@@ -93,8 +93,8 @@ class SupervisorState(TypedDict):
     # Messages exchanged with supervisor for coordination and decision-making
     supervisor_messages: Annotated[Sequence[BaseMessage], add_messages]
 
-    # Detailed research brief that guides the overall research direction
-    research_brief: str
+    # Research plan generated from the research brief 
+    research_plan: ResearchPlan
 
     # Processed and structured notes ready for final report generation
     notes: Annotated[list[str], operator.add]

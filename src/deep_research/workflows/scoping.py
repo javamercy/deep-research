@@ -106,10 +106,7 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> dic
     ]
     response = await research_brief_model.ainvoke(messages, config=config)
 
-    return {
-        "research_brief": response.research_brief,
-        "supervisor_messages": [HumanMessage(content=response.research_brief)]
-    }
+    return {"research_brief": response.research_brief}
 
 
 async def create_plan(
