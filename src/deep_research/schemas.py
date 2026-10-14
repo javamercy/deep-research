@@ -30,7 +30,9 @@ class ClarificationDecision(FrozenBaseModel):
 class ClarificationAnswer(FrozenBaseModel):
     """Answer to a clarification question."""
 
-    answer: str
+    answer: str = Field(
+        description="The user's answer to the clarification question.",
+    )
 
 
 class ResearchQuestion(FrozenBaseModel):
@@ -77,5 +79,10 @@ class ResearchPlan(FrozenBaseModel):
 class ResearchPlanReview(FrozenBaseModel):
     """Schema for structured research plan review."""
 
-    approved: bool
-    feedback: str = ""
+    approved: bool = Field(
+        description="Whether the research plan is approved or not.",
+    )
+    feedback: str = Field(
+        default="",
+        description="Feedback on the research plan. Empty if the plan is approved.",
+    )

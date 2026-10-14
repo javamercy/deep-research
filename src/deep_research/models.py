@@ -13,7 +13,15 @@ def init_openrouter_model(
         llm_config: LLMModelConfig,
         session_id: str | None = None
 ) -> ChatOpenRouter:
-    """Initialize a ChatOpenRouter model based on the provided LLMModelConfig."""
+    """Initialize a ChatOpenRouter model based on the provided LLMModelConfig.
+
+    Args:
+        llm_config (LLMModelConfig): Configuration for the LLM model.
+        session_id (str | None): Optional unique identifier for the session.
+
+    Returns:
+        ChatOpenRouter: An instance of ChatOpenRouter initialized with the specified configuration.
+    """
 
     reasoning = (
         {"effort": llm_config.reasoning_effort}
@@ -43,7 +51,17 @@ def init_openrouter_structured_model[OutputT: BaseModel](
         output_schema: type[OutputT],
         max_retries: int = 3,
 ) -> Runnable[LanguageModelInput, OutputT]:
-    """Initialize a ChatOpenRouter model with structured output based on the provided Configuration and output schema."""
+    """Initialize a ChatOpenRouter model with structured output based on the provided Configuration and output schema.
+
+    Args:
+        llm_config (LLMModelConfig): Configuration for the LLM model.
+        session_id (str | None): Optional unique identifier for the session.
+        output_schema (type[OutputT]): Pydantic model class defining the expected structured output schema.
+        max_retries (int): Maximum number of retries for structured output.
+
+    Returns:
+        Runnable[LanguageModelInput, OutputT]: A Runnable that produces structured output of type Output
+    """
 
     structured_model = (
         init_openrouter_model(llm_config, session_id=session_id)

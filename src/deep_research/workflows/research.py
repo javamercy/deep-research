@@ -129,7 +129,7 @@ async def compress_research(
     }
 
 
-def build_research_graph(checkpointer: Checkpointer):
+def build_researcher_graph(checkpointer: Checkpointer):
     """Build the research workflow graph."""
 
     # pyrefly: ignore [bad-specialization]

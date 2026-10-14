@@ -50,19 +50,10 @@ async def tavily_search(
         summarization_model=summarization_model,
         max_content_length=configuration.max_content_length,
     )
-    return format_search_results(processed_results)
+    return _format_search_results(processed_results)
 
 
-def format_search_results(processed_results: dict) -> str:
-    """Format search results into a well-structured string output.
-
-    Args:
-        processed_results: Dictionary of processed search results
-
-    Returns:
-        Formatted string of search results with clear source separation
-    """
-
+def _format_search_results(processed_results: dict) -> str:
     if not processed_results:
         raise ValueError("No valid search results found. Please try different search queries.")
 

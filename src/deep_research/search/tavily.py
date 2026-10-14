@@ -12,7 +12,7 @@ async def search_tavily(
         topic: Literal["general", "news", "finance"] = "general",
         include_raw_content: bool = True
 ) -> dict:
-    """Perform search using Tavily API for multiple queries.
+    """Perform search using Tavily API and return unique results.
 
     Args:
         query: Search query string
@@ -36,17 +36,7 @@ async def search_tavily(
 
 
 def _deduplicate_search_results(search_results: list[dict]) -> dict:
-    """Deduplicate search results based on their URLs.
-
-    Args:
-        search_results: List of search result dictionaries
-
-    Returns:
-        Dictionary of unique search results keyed by URL
-    """
-
     seen_urls = {}
-
     for result in search_results:
         url = result["url"]
         if url not in seen_urls:

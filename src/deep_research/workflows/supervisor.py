@@ -17,7 +17,7 @@ from deep_research.schemas import ResearchPlan
 from deep_research.state import ResearcherInputState, SupervisorInputState, SupervisorOutputState, SupervisorState
 from deep_research.tools.supervisor import ConductResearch, ResearchComplete, UpdateResearchPlan, UpdateResearchTask
 from deep_research.utils import get_today_str
-from deep_research.workflows.research import build_research_graph
+from deep_research.workflows.research import build_researcher_graph
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +180,7 @@ async def supervisor_tools(
             next_step = END
 
         elif conduct_research_calls:
-            researcher_agent = build_research_graph(checkpointer=None)
+            researcher_agent = build_researcher_graph(checkpointer=None)
 
             threads = []
             for tool_call in conduct_research_calls:

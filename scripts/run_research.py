@@ -11,7 +11,7 @@ from rich.console import Console
 
 from deep_research.state import ResearcherOutputState, ResearcherState
 from deep_research.utils import display_messages
-from deep_research.workflows.research import build_research_graph
+from deep_research.workflows.research import build_researcher_graph
 
 
 async def main():
@@ -32,7 +32,7 @@ async def main():
         raw_notes=[]
     )
 
-    graph = build_research_graph(checkpointer=InMemorySaver())
+    graph = build_researcher_graph(checkpointer=InMemorySaver())
     result = cast(
         ResearcherOutputState,
         await graph.ainvoke(researcher_state, config=config)

@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field
 
 @tool
 class ConductResearch(BaseModel):
-    """Tool for delegating a research task to a specialized sub-agent."""
+    """Tool for delegating a research task to a specialized researcher."""
+
     research_topic: str = Field(
         description="The topic to research. Should be a single topic, and should be described in high detail (at least a paragraph).",
     )
