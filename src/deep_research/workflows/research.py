@@ -32,10 +32,15 @@ async def conduct_research(
     """Analyze current state and decide on next actions.
 
     The model analyzes the current conversation state and decides whether to:
-    1. Call search tools to gather more information
-    2. Provide a final answer based on gathered information
+    1. Invoke a tool for further research (goto "tool_node").
+    2. Compress the research findings into a summary (goto "compress_research").
 
-    Returns updated state with the model's response.
+    Args:
+        state (ResearcherState): The current state of the researcher, including messages and tool calls.
+        config (RunnableConfig): The configuration for the runnable, including model settings.
+
+    Returns:
+        Command: A command indicating the next node to go to and any state updates.
     """
 
     configuration = Configuration.from_runnable_config(config)
@@ -71,6 +76,19 @@ async def researcher_tools(
         state: ResearcherState,
         config: RunnableConfig
 ) -> dict:
+    """Execute the tool calls made by the researcher.
+
+    This node executes the tool calls made by the researcher in the previous step.
+    It updates the state with the results of the tool executions and increments the count of tool calls made.
+
+    Args:
+        state (ResearcherState): The current state of the researcher, including messages and tool calls.
+        config (RunnableConfig): The configuration for the runnable, including model settings.
+
+    Returns:
+        dict: A partial state update containing the results of the tool executions and the updated count of tool calls.
+    """
+
     last_message = state["researcher_messages"][-1]
     if not isinstance(last_message, AIMessage):
         raise ValueError("Expected an AIMessage before tool execution")
@@ -94,6 +112,13 @@ async def compress_research(
 
    Takes all the research messages and tool outputs and creates
    a compressed summary suitable for the supervisor's decision-making.
+
+   Args:
+       state (ResearcherState): The current state of the researcher, including messages and tool calls.
+       config (RunnableConfig): The configuration for the runnable, including model settings.
+
+   Returns:
+       dict: A partial state update containing the compressed research summary and raw notes.
    """
 
     configuration = Configuration.from_runnable_config(config)
@@ -130,7 +155,14 @@ async def compress_research(
 
 
 def build_researcher_graph(checkpointer: Checkpointer):
-    """Build the research workflow graph."""
+    """Build the research workflow graph with the given checkpointer.
+
+    Args:
+        checkpointer (Checkpointer): The checkpointer to use for the graph.
+        
+    Returns:
+        The compiled research workflow graph.
+    """
 
     # pyrefly: ignore [bad-specialization]
     builder = StateGraph(

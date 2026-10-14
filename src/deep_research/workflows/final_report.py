@@ -14,7 +14,14 @@ async def generate_final_report(
 ) -> dict:
     """Final report generation node.
 
-    Synthesizes all research findings into a comprehensive final report
+    Synthesizes all research findings into a comprehensive final report.
+
+    Args:
+        state (AgentState): The current state of the agent, containing research notes and brief.
+        config (RunnableConfig): The configuration for the runnable, including model settings.
+
+    Returns:
+        Partial state update containing the final report and message.
     """
 
     configuration = Configuration.from_runnable_config(config)

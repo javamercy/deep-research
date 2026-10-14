@@ -9,6 +9,14 @@ from deep_research.workflows.supervisor import build_supervisor_graph
 
 
 def build_deep_research_graph(checkpointer: Checkpointer):
+    """Builds the deep research graph with the given checkpointer.
+
+    Args:
+        checkpointer (Checkpointer): The checkpointer to use for the graph.
+    Returns:
+        The compiled deep research graph.
+    """
+
     # pyrefly: ignore [bad-argument-type, bad-specialization]
     builder = StateGraph(AgentState, input_schema=AgentInputState)
 

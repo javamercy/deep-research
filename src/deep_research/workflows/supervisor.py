@@ -67,7 +67,7 @@ async def supervisor(
         config: Runnable configuration for managing sub-agent execution
 
     Returns:
-        Updated state with supervisor messages and iteration count
+        Command indicating the next node to go to and any state updates, including supervisor messages and iteration count.
     """
 
     configuration = Configuration.from_runnable_config(config)
@@ -100,7 +100,7 @@ async def supervisor(
         ),
         HumanMessage(
             content=SUPERVISOR_USER_PROMPT.format(
-                research_plan=research_plan_to_xml(state["research_plan"])
+                research_plan=_research_plan_to_xml(state["research_plan"])
             )
         ),
         *state.get("supervisor_messages", [])
@@ -134,7 +134,7 @@ async def supervisor_tools(
        config: Runnable configuration for managing sub-agent execution
 
     Returns:
-       Command to continue supervision, end process, or handle errors
+       Command to either return to the supervisor for further planning or end the research process.
     """
 
     # TODO: Exception handling for tool execution failures, including logging and fallback strategies
@@ -157,7 +157,7 @@ async def supervisor_tools(
 
     try:
         update_plan_calls, conduct_research_calls = (
-            collect_tool_calls_from_supervisor_message(tool_calls)
+            _collect_tool_calls_from_supervisor_message(tool_calls)
         )
 
         all_updates: list[UpdateResearchTask] = []
@@ -173,7 +173,7 @@ async def supervisor_tools(
                 )
             )
 
-        research_plan = apply_task_updates(research_plan, all_updates)
+        research_plan = _apply_task_updates(research_plan, all_updates)
 
         if research_complete:
             should_end = True
@@ -238,12 +238,10 @@ async def supervisor_tools(
     )
 
 
-def apply_task_updates(
+def _apply_task_updates(
         plan: ResearchPlan,
         task_updates: Sequence[UpdateResearchTask]
 ) -> ResearchPlan:
-    """Return a new ResearchPlan with updated task statuses based on provided updates."""
-
     status_by_id = {update.task_id: update.status for update in task_updates}
     unknown_ids = status_by_id.keys() - {task.id for task in plan.tasks}
 
@@ -263,9 +261,7 @@ def apply_task_updates(
     )
 
 
-def research_plan_to_xml(plan: ResearchPlan) -> str:
-    """Convert a ResearchPlan object to an XML string representation."""
-
+def _research_plan_to_xml(plan: ResearchPlan) -> str:
     root = ElementTree.Element("research_plan")
     tasks_element = ElementTree.SubElement(root, "tasks")
 
@@ -280,11 +276,9 @@ def research_plan_to_xml(plan: ResearchPlan) -> str:
     return ElementTree.tostring(root, encoding="unicode", short_empty_elements=False)
 
 
-def collect_tool_calls_from_supervisor_message(
+def _collect_tool_calls_from_supervisor_message(
         tool_calls: list[ToolCall]
 ) -> tuple[list[ToolCall], list[ToolCall]]:
-    """Collect tool calls from the supervisor's last message."""
-
     update_plan_calls = [
         tool_call for tool_call in tool_calls
         if tool_call["name"] == "UpdateResearchPlan"
@@ -299,7 +293,14 @@ def collect_tool_calls_from_supervisor_message(
 
 
 def build_supervisor_graph(checkpointer: Checkpointer):
-    """Construct the supervisor agent graph."""
+    """Builds the supervisor graph with the given checkpointer.
+
+    Args:
+        checkpointer (Checkpointer): The checkpointer to use for the graph.
+
+    Returns:
+        The compiled supervisor graph.
+    """
 
     # pyrefly: ignore [bad-specialization]
     builder = StateGraph(

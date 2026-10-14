@@ -21,11 +21,17 @@ async def assess_clarification(
         state: ScopingState,
         config: RunnableConfig
 ) -> Command[Literal["ask_clarification", "write_research_brief"]]:
-    """
-    Determine if the user's request contains sufficient information to proceed with research.
+    """Determine if the user's request contains sufficient information to proceed with research.
 
     Uses structured output to make deterministic decisions and avoid hallucination.
-    Routes to either research brief generation or ends with a clarification question.
+    Routes to either ask_clarification or write_research_brief based on the model's assessment.
+
+    Args:
+        state (ScopingState): The current state of the scoping process, including user messages.
+        config (RunnableConfig): The configuration for the runnable, including model settings.
+
+    Returns:
+        Command indicating the next node to go to and any state updates.
     """
 
     configuration = Configuration.from_runnable_config(config)
@@ -63,6 +69,15 @@ async def assess_clarification(
 
 
 def ask_clarification(state: ScopingState) -> dict:
+    """Ask the user for clarification on their request.
+
+    Args:
+        state (ScopingState): The current state of the scoping process, including the clarification question.
+
+    Returns:
+        dict: A partial state update containing the clarification question and the user's answer.
+    """
+
     question = state["clarification_question"]
 
     answer = interrupt(
@@ -90,6 +105,13 @@ async def write_research_brief(
 
     Uses structured output to ensure the brief follows the required format
     and contains all necessary details for effective research.
+
+    Args:
+        state (ScopingState): The current state of the scoping process, including user messages.
+        config (RunnableConfig): The configuration for the runnable, including model settings.
+
+    Returns:
+        dict: A partial state update containing the generated research brief.
     """
 
     configuration = Configuration.from_runnable_config(config)
@@ -119,6 +141,16 @@ async def create_plan(
         state: ScopingState,
         config: RunnableConfig
 ) -> Command[Literal["review_plan", "__end__"]]:
+    """Create a research plan based on the research brief.
+
+    Args:
+        state (ScopingState): The current state of the scoping process, including the research brief.
+        config (RunnableConfig): The configuration for the runnable, including model settings.
+
+    Returns:
+        Command: A command indicating the next node to go to and any state updates.
+    """
+
     configuration = Configuration.from_runnable_config(config)
 
     planning_model = init_openrouter_structured_model(
@@ -162,6 +194,16 @@ def review_plan(
         state: ScopingState,
         config: RunnableConfig
 ) -> Command[Literal["create_plan", "__end__"]]:
+    """Review the proposed research plan and decide whether to approve it or request revisions.
+
+    Args:
+        state (ScopingState): The current state of the scoping process, including the research plan.
+        config (RunnableConfig): The configuration for the runnable, including model settings.
+
+    Returns:
+        Command: A command indicating the next node to go to and any state updates.
+    """
+
     response = interrupt(
         {
             "research_plan": state["research_plan"].model_dump(mode="json"),
@@ -178,7 +220,7 @@ def review_plan(
     elif state.get("planning_iterations", 0) >= configuration.max_planning_iterations:
         should_end = True
         logger.warning("Maximum planning iterations reached. Proceeding with the current research plan.")
-        
+
     return Command(
         goto=END if should_end else "create_plan",
         update={
@@ -189,6 +231,14 @@ def review_plan(
 
 
 def build_scoping_graph(checkpointer: Checkpointer):
+    """Builds the scoping graph with the given checkpointer.
+
+    Args:
+        checkpointer (Checkpointer): The checkpointer to use for the graph.
+    Returns:
+        The compiled scoping graph.
+    """
+
     # TODO: Workaround for Pyrefly/LangGraph TypedDict compatibility.
     # See: https://github.com/facebook/pyrefly/issues/3745
     # pyrefly: ignore [bad-specialization]
