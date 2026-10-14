@@ -1,6 +1,6 @@
 import operator
 from collections.abc import Sequence
-from typing import Annotated, NotRequired, TypedDict
+from typing import Annotated, TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph import MessagesState, add_messages
@@ -22,23 +22,11 @@ class AgentState(MessagesState):
     state management between subgraphs and the main workflow.
     """
 
-    # Response from AI agent asking for clarification on the user's request
-    clarification_question: NotRequired[str]
-
     # Research brief generated from user conversation history
-    research_brief: NotRequired[str]
+    research_brief: str
 
     # Research plan generated from the research brief and user input
-    research_plan: NotRequired[ResearchPlan]
-
-    # Feedback from the user on the research plan
-    plan_feedback: NotRequired[str]
-
-    # User decision on whether to approve or revise the research plan
-    plan_approved: NotRequired[bool]
-
-    # Counter tracking the number of planning iterations performed
-    planning_iterations: int
+    research_plan: ResearchPlan
 
     # Messages exchanged with the supervisor agent for coordination
     supervisor_messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -50,7 +38,42 @@ class AgentState(MessagesState):
     notes: Annotated[list[str], operator.add]
 
     # Final formatted research report
-    final_report: NotRequired[str]
+    final_report: str
+
+
+class ScopingInputState(MessagesState):
+    pass
+
+
+class ScopingState(MessagesState):
+    # Response from AI agent asking for clarification on the user's request
+    clarification_question: str
+
+    # Research brief generated from user conversation history
+    research_brief: str
+
+    # Research plan generated from the research brief and user input
+    research_plan: ResearchPlan
+
+    # Feedback from the user on the research plan
+    plan_feedback: str
+
+    # User decision on whether to approve or revise the research plan
+    plan_approved: bool
+
+    # Counter tracking the number of planning iterations performed
+    planning_iterations: int
+
+
+class ScopingOutputState(TypedDict):
+    research_brief: str
+    research_plan: ResearchPlan
+
+
+class ResearcherInputState(TypedDict):
+    researcher_messages: Annotated[Sequence[BaseMessage], add_messages]
+    research_topic: str
+    researcher_tool_calls: int
 
 
 class ResearcherState(TypedDict):
@@ -63,8 +86,8 @@ class ResearcherState(TypedDict):
     """
 
     researcher_messages: Annotated[Sequence[BaseMessage], add_messages]
-    tool_call_iterations: int
     research_topic: str
+    researcher_tool_calls: int
     compressed_research: str
     raw_notes: Annotated[list[str], operator.add]
 
@@ -77,9 +100,13 @@ class ResearcherOutputState(TypedDict):
     research findings and all raw notes from the research process.
     """
 
-    compressed_research: str
-    raw_notes: Annotated[list[str], operator.add]
     researcher_messages: Annotated[Sequence[BaseMessage], add_messages]
+    raw_notes: Annotated[list[str], operator.add]
+    compressed_research: str
+
+
+class SupervisorInputState(TypedDict):
+    research_plan: ResearchPlan
 
 
 class SupervisorState(TypedDict):
@@ -100,7 +127,12 @@ class SupervisorState(TypedDict):
     notes: Annotated[list[str], operator.add]
 
     # Counter tracking the number of research iterations performed
-    research_iterations: int
+    supervisor_iterations: int
 
     # Raw unprocessed research notes collected from sub-agent research
     raw_notes: Annotated[list[str], operator.add]
+
+
+class SupervisorOutputState(TypedDict):
+    research_plan: ResearchPlan
+    notes: Annotated[list[str], operator.add]

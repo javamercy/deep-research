@@ -7,7 +7,7 @@ from deep_research.configuration import Configuration
 from deep_research.models import init_openrouter_structured_model
 from deep_research.schemas import ContentSummary
 from deep_research.search.processing import process_search_results
-from deep_research.search.tavily import tavily_search_multiple
+from deep_research.search.tavily import search_tavily
 
 
 @tool(parse_docstring=True)
@@ -38,8 +38,8 @@ async def tavily_search(
         session_id=configuration.session_id,
     )
 
-    unique_results = await tavily_search_multiple(
-        search_queries=[query],
+    unique_results = await search_tavily(
+        query,
         max_results=max_results,
         topic=topic,
         include_raw_content=True,

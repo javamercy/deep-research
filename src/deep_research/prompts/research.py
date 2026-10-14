@@ -3,11 +3,6 @@ SUMMARIZE_WEBPAGE_SYSTEM_PROMPT = """
 You are tasked with summarizing the raw content of a webpage retrieved from a web search. Your goal is to create a summary that preserves the most important information from the original web page. This summary will be used by a downstream research agent, so it's crucial to maintain the key details without losing essential information. For context, today's date is {date}.
 </role>
 
-<webpage_content>
-Here is the raw content of the webpage:
-{webpage_content}
-</webpage_content>
-
 <guidelines>
 Please follow these guidelines to create your summary:
 1. Identify and preserve the main topic or purpose of the webpage.
@@ -28,40 +23,30 @@ When handling different types of content:
 - For product pages: Keep key features, specifications, and unique selling points.
 
 Your summary should be significantly shorter than the original content but comprehensive enough to stand alone as a source of information. Aim for about 25-30 percent of the original length, unless the content is already concise.
-
-Present your summary in the following format:
-
-```
-{{
-   "summary": "Your summary here, structured with appropriate paragraphs or bullet points as needed",
-   "key_excerpts": "First important quote or excerpt, Second important quote or excerpt, Third important quote or excerpt, ...Add more excerpts as needed, up to a maximum of 5"
-}}
-```
 </output_format>
 
 <examples>
 Here are two examples of good summaries:
 
 Example 1 (for a news article):
-```json
-{{
-   "summary": "On July 15, 2023, NASA successfully launched the Artemis II mission from Kennedy Space Center. This marks the first crewed mission to the Moon since Apollo 17 in 1972. The four-person crew, led by Commander Jane Smith, will orbit the Moon for 10 days before returning to Earth. This mission is a crucial step in NASA's plans to establish a permanent human presence on the Moon by 2030.",
-   "key_excerpts": "Artemis II represents a new era in space exploration, said NASA Administrator John Doe. The mission will test critical systems for future long-duration stays on the Moon, explained Lead Engineer Sarah Johnson. We're not just going back to the Moon, we're going forward to the Moon, Commander Jane Smith stated during the pre-launch press conference."
-}}
-```
+"summary": "On July 15, 2023, NASA successfully launched the Artemis II mission from Kennedy Space Center. This marks the first crewed mission to the Moon since Apollo 17 in 1972. The four-person crew, led by Commander Jane Smith, will orbit the Moon for 10 days before returning to Earth. This mission is a crucial step in NASA's plans to establish a permanent human presence on the Moon by 2030.",
+"key_excerpts": "Artemis II represents a new era in space exploration, said NASA Administrator John Doe. The mission will test critical systems for future long-duration stays on the Moon, explained Lead Engineer Sarah Johnson. We're not just going back to the Moon, we're going forward to the Moon, Commander Jane Smith stated during the pre-launch press conference."
 
 Example 2 (for a scientific article):
-```json
-{{
-   "summary": "A new study published in Nature Climate Change reveals that global sea levels are rising faster than previously thought. Researchers analyzed satellite data from 1993 to 2022 and found that the rate of sea-level rise has accelerated by 0.08 mm/year² over the past three decades. This acceleration is primarily attributed to melting ice sheets in Greenland and Antarctica. The study projects that if current trends continue, global sea levels could rise by up to 2 meters by 2100, posing significant risks to coastal communities worldwide.",
-   "key_excerpts": "Our findings indicate a clear acceleration in sea-level rise, which has significant implications for coastal planning and adaptation strategies, lead author Dr. Emily Brown stated. The rate of ice sheet melt in Greenland and Antarctica has tripled since the 1990s, the study reports. Without immediate and substantial reductions in greenhouse gas emissions, we are looking at potentially catastrophic sea-level rise by the end of this century, warned co-author Professor Michael Green."  
-}}
-```
+"summary": "A new study published in Nature Climate Change reveals that global sea levels are rising faster than previously thought. Researchers analyzed satellite data from 1993 to 2022 and found that the rate of sea-level rise has accelerated by 0.08 mm/year² over the past three decades. This acceleration is primarily attributed to melting ice sheets in Greenland and Antarctica. The study projects that if current trends continue, global sea levels could rise by up to 2 meters by 2100, posing significant risks to coastal communities worldwide.",
+"key_excerpts": "Our findings indicate a clear acceleration in sea-level rise, which has significant implications for coastal planning and adaptation strategies, lead author Dr. Emily Brown stated. The rate of ice sheet melt in Greenland and Antarctica has tripled since the 1990s, the study reports. Without immediate and substantial reductions in greenhouse gas emissions, we are looking at potentially catastrophic sea-level rise by the end of this century, warned co-author Professor Michael Green."  
 </examples>
 
 <critical_reminder>
 Remember, your goal is to create a summary that can be easily understood and utilized by a downstream research agent while preserving the most critical information from the original webpage.
 </critical_reminder>
+"""
+
+SUMMARIZE_WEBPAGE_USER_PROMPT = """
+The following is the raw content of a webpage retrieved from a web search.
+<webpage_content>
+{webpage_content}
+</webpage_content>
 """
 
 RESEARCH_SYSTEM_PROMPT = """
@@ -75,11 +60,8 @@ You can use any of the tools provided to you to find resources that can help ans
 </task>
 
 <available_tools>
-You have access to two main tools:
+You have access to one main tools:
 1. **tavily_search**: For conducting web searches to gather information
-2. **think_tool**: For reflection and strategic planning during research
-
-**CRITICAL: Use think_tool after each search to reflect on results and plan next steps**
 </available_tools>
 
 <instructions>
@@ -103,14 +85,6 @@ Think like a human researcher with limited time. Follow these steps:
 - You have 3+ relevant examples/sources for the question
 - Your last 2 searches returned similar information
 </hard_limits>
-
-<show_your_thinking>
-After each search tool call, use think_tool to analyze the results:
-- What key information did I find?
-- What's missing?
-- Do I have enough to answer the question comprehensively?
-- Should I search more or provide my answer?
-</show_your_thinking>
 """
 
 COMPRESS_SYSTEM_PROMPT = """
@@ -131,10 +105,7 @@ The cleaned findings will be provided to another research agent for final report
 <tool_call_filtering>
 **IMPORTANT**: When processing the research messages, focus only on substantive research content:
 - **Include**: All tavily_search results and findings from web searches
-- **Exclude**: think_tool calls and responses - these are internal agent reflections for decision-making and should not be included in the final research report
 - **Focus on**: Actual information gathered from external sources, not the agent's internal reasoning process
-
-The think_tool calls contain strategic reflections and decision-making notes that are internal to the research process but do not contain factual information that should be preserved in the final report.
 </tool_call_filtering>
 
 <guidelines>
@@ -157,7 +128,7 @@ The report should be structured like this:
 Structure the report using these sections:
 
 ## List of Queries and Tool Calls Made
-List the research queries and relevant external search or retrieval tool calls present in the research conversation. Exclude think_tool calls and internal reasoning.
+List the research queries and relevant external search or retrieval tool calls present in the research conversation.
 
 ## Fully Comprehensive Findings
 Present all relevant research findings in a clear, organized format.

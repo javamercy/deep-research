@@ -8,12 +8,6 @@ from langchain_core.runnables import RunnableConfig
 from deep_research.schemas import FrozenBaseModel
 
 
-class SearchAPI(StrEnum):
-    TAVILY = "tavily"
-    OPENROUTER = "openrouter"
-    NONE = "none"
-
-
 class LLMModel(StrEnum):
     DEEPSEEK_V4_FLASH = "deepseek/deepseek-v4-flash-0731:floor"
     DEEPSEEK_V4_1_FLASH = "deepseek/deepseek-v4.1-flash:floor"
@@ -42,42 +36,40 @@ class Configuration(FrozenBaseModel):
 
     max_concurrent_research_threads: int = 5
 
-    search_api: SearchAPI = SearchAPI.TAVILY
+    max_supervisor_iterations: int = 1
 
-    max_researcher_iterations: int = 5
+    max_researcher_tool_calls: int = 2
 
-    max_research_tool_calls: int = 5
-
-    max_content_length: int = 50000
+    max_content_length: int = 20_000
 
     scoping_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
-        max_output_tokens=8192,
+        max_output_tokens=8_192,
     )
 
     research_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
-        max_output_tokens=8192,
+        max_output_tokens=8_192,
     )
 
     summarization_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
-        max_output_tokens=16000,
+        max_output_tokens=16_000,
     )
 
     compression_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
-        max_output_tokens=16000,
+        max_output_tokens=16_000,
     )
 
     supervisor_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
-        max_output_tokens=8192,
+        max_output_tokens=8_192,
     )
 
     writer_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
-        max_output_tokens=64000,
+        max_output_tokens=64_000,
     )
 
     @classmethod

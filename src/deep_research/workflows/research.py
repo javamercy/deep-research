@@ -1,4 +1,4 @@
-from typing import Literal, cast
+from typing import Literal
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage, filter_messages
 from langchain_core.runnables import RunnableConfig
@@ -6,34 +6,29 @@ from langchain_core.tools import BaseTool
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
-from langgraph.types import Checkpointer
+from langgraph.types import Checkpointer, Command
 
 from deep_research.configuration import Configuration
 from deep_research.models import init_openrouter_model
 from deep_research.prompts.research import COMPRESS_SYSTEM_PROMPT, COMPRESS_USER_PROMPT, RESEARCH_SYSTEM_PROMPT
-from deep_research.state import ResearcherOutputState, ResearcherState
-from deep_research.tools.reflection import think_tool
+from deep_research.state import ResearcherInputState, ResearcherOutputState, ResearcherState
 from deep_research.tools.search import tavily_search
 from deep_research.utils import get_today_str
 
-_tools: list[BaseTool] = [tavily_search, think_tool]
+TOOLS: list[BaseTool] = [tavily_search]
+
+tool_node = ToolNode(
+    name="tool_node",
+    tools=TOOLS,
+    messages_key="researcher_messages",
+    handle_tool_errors=True
+)
 
 
-def create_tool_node() -> ToolNode:
-    return ToolNode(
-        name="tool_node",
-        tools=_tools,
-        messages_key="researcher_messages",
-    )
-
-
-def increment_tool_call_iterations(state: ResearcherState) -> dict:
-    """Increment the tool call iterations counter in the state."""
-
-    return {"tool_call_iterations": state["tool_call_iterations"] + 1}
-
-
-async def conduct_research(state: ResearcherState, config: RunnableConfig) -> dict:
+async def conduct_research(
+        state: ResearcherState,
+        config: RunnableConfig
+) -> Command[Literal["tool_node", "compress_research"]]:
     """Analyze current state and decide on next actions.
 
     The model analyzes the current conversation state and decides whether to:
@@ -44,24 +39,57 @@ async def conduct_research(state: ResearcherState, config: RunnableConfig) -> di
     """
 
     configuration = Configuration.from_runnable_config(config)
+
+    if state.get("researcher_tool_calls", 0) >= configuration.max_researcher_tool_calls:
+        return Command(goto="compress_research")
+
     model_with_tools = (
         init_openrouter_model(
             llm_config=configuration.research_llm_config,
             session_id=configuration.session_id
         )
-        .bind_tools(_tools)
+        .bind_tools(TOOLS)
     )
 
     messages: list[BaseMessage] = [
-        SystemMessage(content=RESEARCH_SYSTEM_PROMPT.format(date=get_today_str())),
+        SystemMessage(
+            content=RESEARCH_SYSTEM_PROMPT.format(date=get_today_str())
+        ),
         *state["researcher_messages"],
     ]
     response = await model_with_tools.ainvoke(messages, config=config)
 
-    return {"researcher_messages": [response]}
+    return Command(
+        goto="tool_node" if response.tool_calls else "compress_research",
+        update={
+            "researcher_messages": [response]
+        }
+    )
 
 
-async def compress_research(state: ResearcherState, config: RunnableConfig) -> dict:
+async def researcher_tools(
+        state: ResearcherState,
+        config: RunnableConfig
+) -> dict:
+    last_message = state["researcher_messages"][-1]
+    if not isinstance(last_message, AIMessage):
+        raise ValueError("Expected an AIMessage before tool execution")
+
+    result = await tool_node.ainvoke(state, config=config)
+
+    return {
+        **result,
+        "researcher_tool_calls": (
+                state.get("researcher_tool_calls", 0)
+                + len(last_message.tool_calls)
+        ),
+    }
+
+
+async def compress_research(
+        state: ResearcherState,
+        config: RunnableConfig
+) -> dict:
     """Compress research findings into a concise summary.
 
    Takes all the research messages and tool outputs and creates
@@ -75,55 +103,30 @@ async def compress_research(state: ResearcherState, config: RunnableConfig) -> d
     )
 
     messages: list[BaseMessage] = [
-        SystemMessage(content=COMPRESS_SYSTEM_PROMPT.format(date=get_today_str())),
+        SystemMessage(
+            content=COMPRESS_SYSTEM_PROMPT.format(date=get_today_str())
+        ),
         *state["researcher_messages"],
         HumanMessage(
-            content=COMPRESS_USER_PROMPT.format(
-                research_topic=state["research_topic"],
-            )
+            content=COMPRESS_USER_PROMPT.format(research_topic=state["research_topic"])
         ),
     ]
     response = await compress_model.ainvoke(messages)
 
+    # TODO: Consider using a more structured approach to extract raw notes,
+    #  separating them by message type or source for better clarity and analysis.
     raw_notes = [
-        str(message.content) for message in filter_messages(
+        message.text for message in filter_messages(
             state["researcher_messages"],
             include_types=[ToolMessage, AIMessage]
         )
     ]
 
     return {
-        "compressed_research": str(response.content),
+        "compressed_research": response.text,
+        # TODO: See todo above.
         "raw_notes": ["\n".join(raw_notes)]
     }
-
-
-def should_continue(
-        state: ResearcherState,
-        config: RunnableConfig
-) -> Literal["tool_node", "compress_research"]:
-    """Determine whether to continue research or provide final answer.
-
-    Determines whether the agent should continue the research loop or provide
-    a final answer based on whether the LLM made tool calls.
-
-    Returns:
-        "tool_node": Continue to tool execution
-        "compress_research": Stop and compress research
-    """
-
-    configuration = Configuration.from_runnable_config(config)
-    max_tool_calls = configuration.max_research_tool_calls
-
-    if state["tool_call_iterations"] == max_tool_calls:
-        return "compress_research"
-
-    last_message = cast(AIMessage, state["researcher_messages"][-1])
-
-    if last_message.tool_calls:
-        return "tool_node"
-
-    return "compress_research"
 
 
 def build_research_graph(checkpointer: Checkpointer):
@@ -133,18 +136,16 @@ def build_research_graph(checkpointer: Checkpointer):
     builder = StateGraph(
         ResearcherState,
         # pyrefly: ignore [bad-argument-type]
+        input_schema=ResearcherInputState,
+        # pyrefly: ignore [bad-argument-type]
         output_schema=ResearcherOutputState)
 
     builder.add_node("conduct_research", conduct_research)
     builder.add_node("compress_research", compress_research)
-    builder.add_node("tool_node", create_tool_node())
-    builder.add_node("increment_tool_call_iterations", increment_tool_call_iterations)
+    builder.add_node("researcher_tools", researcher_tools)
 
     builder.add_edge(START, "conduct_research")
-    builder.add_conditional_edges("conduct_research", should_continue)
-    builder.add_edge("tool_node", "increment_tool_call_iterations")
-    builder.add_edge("increment_tool_call_iterations", "conduct_research")
-
+    builder.add_edge("researcher_tools", "conduct_research")
     builder.add_edge("compress_research", END)
 
     return builder.compile(checkpointer=checkpointer)

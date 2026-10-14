@@ -1,10 +1,14 @@
+import logging
+
 from langchain_core.language_models import LanguageModelInput
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import Runnable
 
-from deep_research.prompts.research import SUMMARIZE_WEBPAGE_SYSTEM_PROMPT
+from deep_research.prompts.research import SUMMARIZE_WEBPAGE_SYSTEM_PROMPT, SUMMARIZE_WEBPAGE_USER_PROMPT
 from deep_research.schemas import ContentSummary
 from deep_research.utils import get_today_str
+
+logger = logging.getLogger(__name__)
 
 
 async def process_search_results(
@@ -30,11 +34,18 @@ async def process_search_results(
         if not result.get("raw_content"):
             content = result["content"]
         else:
-            content = await _summarize_webpage_content(
-                result["raw_content"],
-                summarization_model=summarization_model,
-                max_content_length=max_content_length
-            )
+            webpage_content = result["raw_content"]
+            if len(webpage_content) > max_content_length:
+                webpage_content = webpage_content[:max_content_length] + "..."
+
+            try:
+                content = await _summarize_webpage_content(
+                    webpage_content,
+                    summarization_model=summarization_model
+                )
+            except Exception as e:
+                logger.error(f"Error summarizing content for URL {url}: {e}")
+                content = webpage_content
 
         processed_results[url] = {
             "title": result["title"],
@@ -48,30 +59,19 @@ async def _summarize_webpage_content(
         webpage_content: str,
         *,
         summarization_model: Runnable[LanguageModelInput, ContentSummary],
-        max_content_length: int
 ) -> str:
-    try:
-        messages = [
-            HumanMessage(
-                content=SUMMARIZE_WEBPAGE_SYSTEM_PROMPT.format(
-                    webpage_content=webpage_content,
-                    date=get_today_str(),
-                )
-            )
-        ]
-
-        summary = await summarization_model.ainvoke(messages)
-
-        formatted_summary = (
-            f"<summary>\n{summary.summary}\n</summary>\n\n"
-            f"<key_excerpts>\n{summary.key_excerpts}\n</key_excerpts>"
+    messages = [
+        SystemMessage(
+            content=SUMMARIZE_WEBPAGE_SYSTEM_PROMPT.format(date=get_today_str())
+        ),
+        HumanMessage(
+            content=SUMMARIZE_WEBPAGE_USER_PROMPT.format(webpage_content=webpage_content)
         )
-        return formatted_summary
-
-    except Exception as e:
-        print(f"Error summarizing webpage content: {e}")
-
-        if len(webpage_content) > max_content_length:
-            return webpage_content[:max_content_length] + "..."
-
-        return webpage_content
+    ]
+    summary = await summarization_model.ainvoke(messages)
+    formatted_summary = (
+        f"<summary>\n{summary.summary}\n</summary>\n\n"
+        f"<key_excerpts>\n{summary.key_excerpts}\n</key_excerpts>"
+    )
+    
+    return formatted_summary

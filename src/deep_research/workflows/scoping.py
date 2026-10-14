@@ -1,8 +1,9 @@
+import logging
 from typing import Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, get_buffer_string
 from langchain_core.runnables import RunnableConfig
-from langgraph.constants import START
+from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 from langgraph.types import Checkpointer, Command, interrupt
 
@@ -10,12 +11,14 @@ from deep_research.configuration import Configuration
 from deep_research.models import init_openrouter_structured_model
 from deep_research.prompts.scoping import CLARIFICATION_SYSTEM_PROMPT, CLARIFICATION_USER_PROMPT, RESEARCH_PLANNING_SYSTEM_PROMPT, RESEARCH_PLANNING_USER_PROMPT, WRITE_RESEARCH_BRIEF_SYSTEM_PROMPT, WRITE_RESEARCH_BRIEF_USER_PROMPT
 from deep_research.schemas import ClarificationAnswer, ClarificationDecision, ResearchPlan, ResearchPlanReview, ResearchQuestion
-from deep_research.state import AgentInputState, AgentState
+from deep_research.state import ScopingInputState, ScopingOutputState, ScopingState
 from deep_research.utils import get_today_str
+
+logger = logging.getLogger(__name__)
 
 
 async def assess_clarification(
-        state: AgentState,
+        state: ScopingState,
         config: RunnableConfig
 ) -> Command[Literal["ask_clarification", "write_research_brief"]]:
     """
@@ -59,7 +62,7 @@ async def assess_clarification(
         )
 
 
-def ask_clarification(state: AgentState) -> dict:
+def ask_clarification(state: ScopingState) -> dict:
     question = state["clarification_question"]
 
     answer = interrupt(
@@ -78,7 +81,10 @@ def ask_clarification(state: AgentState) -> dict:
     }
 
 
-async def write_research_brief(state: AgentState, config: RunnableConfig) -> dict:
+async def write_research_brief(
+        state: ScopingState,
+        config: RunnableConfig
+) -> dict:
     """
     Transform the conversation history into a comprehensive research brief.
 
@@ -110,9 +116,9 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> dic
 
 
 async def create_plan(
-        state: AgentState,
+        state: ScopingState,
         config: RunnableConfig
-) -> dict:
+) -> Command[Literal["review_plan", "__end__"]]:
     configuration = Configuration.from_runnable_config(config)
 
     planning_model = init_openrouter_structured_model(
@@ -122,7 +128,6 @@ async def create_plan(
         output_schema=ResearchPlan
     )
 
-    # TODO: Write prompts for research planning.
     messages = [
         SystemMessage(
             content=RESEARCH_PLANNING_SYSTEM_PROMPT.format(date=get_today_str())
@@ -143,13 +148,20 @@ async def create_plan(
 
     research_plan = await planning_model.ainvoke(messages, config=config)
 
-    return {
-        "research_plan": research_plan,
-        "planning_iterations": state.get("planning_iterations", 0) + 1
-    }
+    goto = "review_plan" if configuration.allow_collaborative_planning else END
+    return Command(
+        goto=goto,
+        update={
+            "research_plan": research_plan,
+            "planning_iterations": state.get("planning_iterations", 0) + 1
+        }
+    )
 
 
-def review_plan(state: AgentState) -> dict:
+def review_plan(
+        state: ScopingState,
+        config: RunnableConfig
+) -> Command[Literal["create_plan", "__end__"]]:
     response = interrupt(
         {
             "research_plan": state["research_plan"].model_dump(mode="json"),
@@ -158,25 +170,22 @@ def review_plan(state: AgentState) -> dict:
         response_schema=ResearchPlanReview
     )
 
-    return {
-        "plan_approved": response.approved,
-        "plan_feedback": response.feedback
-    }
-
-
-def route_review(
-        state: AgentState,
-        config: RunnableConfig
-) -> Literal["create_plan", "__end__"]:
+    should_end = False
     configuration = Configuration.from_runnable_config(config)
 
-    if (
-            state["planning_iterations"] == configuration.max_planning_iterations
-            or state["plan_approved"]
-    ):
-        return "__end__"
-
-    return "create_plan"
+    if response.approved:
+        should_end = True
+    elif state.get("planning_iterations", 0) >= configuration.max_planning_iterations:
+        should_end = True
+        logger.warning("Maximum planning iterations reached. Proceeding with the current research plan.")
+        
+    return Command(
+        goto=END if should_end else "create_plan",
+        update={
+            "plan_approved": response.approved,
+            "plan_feedback": response.feedback
+        }
+    )
 
 
 def build_scoping_graph(checkpointer: Checkpointer):
@@ -184,9 +193,11 @@ def build_scoping_graph(checkpointer: Checkpointer):
     # See: https://github.com/facebook/pyrefly/issues/3745
     # pyrefly: ignore [bad-specialization]
     builder = StateGraph(
-        AgentState,
+        ScopingState,
         # pyrefly: ignore [bad-argument-type]
-        input_schema=AgentInputState,
+        input_schema=ScopingInputState,
+        # pyrefly: ignore [bad-argument-type]
+        output_schema=ScopingOutputState
     )
 
     builder.add_node("assess_clarification", assess_clarification)
@@ -198,8 +209,5 @@ def build_scoping_graph(checkpointer: Checkpointer):
     builder.add_edge(START, "assess_clarification")
     builder.add_edge("ask_clarification", "assess_clarification")
     builder.add_edge("write_research_brief", "create_plan")
-    builder.add_edge("create_plan", "review_plan")
-
-    builder.add_conditional_edges("review_plan", route_review)
 
     return builder.compile(checkpointer=checkpointer)

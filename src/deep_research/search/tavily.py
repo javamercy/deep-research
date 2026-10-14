@@ -2,11 +2,11 @@ from typing import Literal
 
 from tavily import AsyncTavilyClient
 
-_client = AsyncTavilyClient()
+client = AsyncTavilyClient()
 
 
-async def tavily_search_multiple(
-        search_queries: list[str],
+async def search_tavily(
+        query: str,
         *,
         max_results: int = 5,
         topic: Literal["general", "news", "finance"] = "general",
@@ -15,7 +15,7 @@ async def tavily_search_multiple(
     """Perform search using Tavily API for multiple queries.
 
     Args:
-        search_queries: List of search queries to execute
+        query: Search query string
         max_results: Maximum number of results per query
         topic: Topic filter for search results
         include_raw_content: Whether to include raw webpage content
@@ -24,18 +24,15 @@ async def tavily_search_multiple(
         Dictionary of unique search results keyed by URL
     """
 
-    results = []
-    for query in search_queries:
-        result = await _client.search(
-            query=query,
-            max_results=max_results,
-            topic=topic,
-            include_raw_content=include_raw_content,
-            include_images=False,
-        )
-        results.append(result)
+    result = await client.search(
+        query=query,
+        max_results=max_results,
+        topic=topic,
+        include_raw_content=include_raw_content,
+        include_images=False,
+    )
 
-    return _deduplicate_search_results(results[0].get("results", []))
+    return _deduplicate_search_results(result.get("results", []))
 
 
 def _deduplicate_search_results(search_results: list[dict]) -> dict:

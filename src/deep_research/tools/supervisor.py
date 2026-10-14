@@ -1,7 +1,7 @@
+from typing import Literal
+
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
-
-from deep_research.schemas import ResearchTask
 
 
 @tool
@@ -17,13 +17,21 @@ class ResearchComplete(BaseModel):
     """Tool for indicating that the research process is complete."""
 
 
+class UpdateResearchTask(BaseModel):
+    """Model representing a research task to be updated in the research plan."""
+
+    task_id: str = Field(
+        description="The unique identifier of the research task to update."
+    )
+    status: Literal["pending", "in_progress", "completed"] = Field(
+        description="The new status of the research task. Can be 'pending', 'in_progress', or 'completed'."
+    )
+
+
 @tool
 class UpdateResearchPlan(BaseModel):
-    """Tool for updating the research plan with new or modified tasks."""
+    """Tool for updating the research plan with modified tasks."""
 
-    task_updates: list[ResearchTask] = Field(
-        description="A list of updated research tasks. If existing tasks are being updated, they should be included in this list with their updated details. New tasks can also be added to this list.",
-    )
-    summary: str = Field(
-        description="A summary of the updates made to the research plan. This should provide a concise overview of the changes, including any new tasks added or existing tasks modified.",
+    tasks: list[UpdateResearchTask] = Field(
+        description="A list of research tasks that will be updated in the research plan.",
     )
