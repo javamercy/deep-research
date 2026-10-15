@@ -89,6 +89,10 @@ FAIL (contains unwarranted assumptions) if:
 - Brief assumes demographic, geographic, or contextual details not provided
 - Brief narrows scope beyond user's stated constraints
 - Brief introduces requirements user didn't specify
+
+**CRITICAL:** If the brief includes examples about specific locations, demographics, or other details about a certain topic that were not explicitly provided by the user:
+- If the examples are just general suggestions for research sources or methods, it is PASS
+- If the examples are specific assumptions about the user's needs and will guide research in a way that may not align with the user's actual requirements, it is FAIL
 </evaluation_guidelines>
 
 <evaluation_examples>

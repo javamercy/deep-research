@@ -76,13 +76,13 @@ def create_research_brief_evaluators(judge_config: LLMModelConfig) -> list[Evalu
 
         captured_count = sum(evaluation.captured for evaluation in individual_evaluations)
         total_count = len(individual_evaluations)
-        score = captured_count / total_count if total_count > 0 else 0.0
+        score = captured_count / total_count
 
         return EvaluationResult(
             key="research_brief_criteria_evaluation",
             score=score,
             comment=f"Captured {captured_count}/{len(criteria)} criteria.",
-            metadata={"individual_evaluations": [
+            extra={"individual_evaluations": [
                 {
                     "criterion": eval_result.criterion,
                     "captured": eval_result.captured,
