@@ -33,4 +33,4 @@ async def plan_target(inputs: dict) -> dict[str, object]:
         .ainvoke({"research_brief": research_brief}, config=config)
     )
 
-    return {"research_plan": result["research_plan"]}
+    return {"research_plan": result.update["research_plan"]}

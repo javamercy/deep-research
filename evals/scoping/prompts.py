@@ -130,46 +130,48 @@ Evaluate whether the following research brief contains any unwarranted assumptio
 </research_brief>
 """
 
-PLAN_CRITERIA_SYSTEM_PROMPT = """
+PLAN_ADEQUACY_SYSTEM_PROMPT = """
 <role>
-You are an expert research plan evaluator specializing in assessing whether generated research plans accurately capture user-specified criteria without loss of important details.
+You are an expert research plan evaluator specialized in assessing whether generated research plan adequately satisfies the evaluation dimensions.
 </role>
 
 <task>
-Determine if the research plan adequately captures the specific success criterion provided. Return a binary assessment with detailed reasoning.
+Determine if the research plan adequately captures the evaluation dimensions provided. Return a binary assessment with detailed reasoning.
 </task>
 
 <evaluation_context>
-Research plans are critical for guiding downstream research agents. Missing or inadequately captured criteria can lead to incomplete research that fails to address user needs. Accurate evaluation ensures research quality and user satisfaction.
+Research plans are critical for guiding research execution. Missing or inadequately captured dimensions can lead to incomplete research that fails to address user needs. Accurate evaluation ensures that required information is gathered for successful report generation.
 </evaluation_context>
 
-<evaluation_guidelines>
-CAPTURED (criterion is adequately represented) if:
-- The research plan explicitly mentions or directly addresses the criterion
-- The plan contains equivalent language or concepts that clearly cover the criterion
-- The criterion's intent is preserved even if worded differently
-- All key aspects of the criterion are represented in the plan
+<evaluation_dimensions>
+Evaluate the research plan against three dimensions:
+1. **Goal Fidelity:** Does the plan preserve the research brief's intent, scope and constraints without introducing unjustified assumptions or hallucinations?
+2. **Investigative Sufficiency:** Do the tasks collectively establish a viable path to obtaining the necessary information to generate a comprehensive research report?
+3. **Execution Feasibility:** Are the tasks actionable, clearly scoped, and logically organized, with correct dependencies? Are there any redundancies or missing steps that could hur the research process?
 
-NOT CAPTURED (criterion is missing or inadequately addressed) if:
-- The criterion is completely absent from the research plan
-- The plan only partially addresses the criterion, missing important aspects
-- The criterion is implied but not clearly stated or actionable for researchers
-- The plan contradicts or conflicts with the criterion
+**IMPORTANT:** A well-constructed research plan should satisfy all three dimensions. If any dimension is inadequately addressed, the plan should be considered FAIL.
+<evaluation_dimensions>
+
+<evaluation_guidelines>
+- Evaluate the plan as an investigative strategy, not as a completed research report. Focus on whether the plan is sufficient to gather the necessary information.
+- Assess the collective adequacy of task objectives and success criteria, rather than merely checking the requirements are mentioned.
+- Accept different valid task decompositions and sequences of dependent and independent tasks.
 </evaluation_guidelines>
 
-<output_instructions>
-1. Carefully examine the research plan for evidence of the specific criterion
-2. Look for both explicit mentions and equivalent concepts
-3. Provide specific quotes or references from the plan as evidence
-4. Be systematic - when in doubt about partial coverage, lean toward NOT CAPTURED for quality assurance
-5. Focus on whether a researcher could act on this criterion based on the plan alone
-</output_instructions>
+<decision_rules>
+- PASS if all three dimensions are adequately satisfied.
+- FAIL if any dimension is inadequately addressed.
+- When a critical requirement cannot be verified from the plan, lean toward FAIL and explain what is missing or unclear.
+- Provide a binary judgment (PASS/FAIL) along with detailed reasoning for each dimension, citing specific evidence from the research brief and plan.
+</decision_rules>
 """
 
-PLAN_CRITERIA_USER_PROMPT = """
-Evaluate whether the following RESEARCH PLAN captures the specified CRITERION.
+PLAN_ADEQUACY_USER_PROMPT = """
+Evaluate whether the RESEARCH PLAN adequately satisfies the evaluation dimensions of Goal Fidelity, Investigative Sufficiency, and Execution Feasibility based on the provided RESEARCH BRIEF.
 
-<research_plan>
+<research_brief>
+{research_brief}
+</research_brief>
+
 {research_plan}
-</research_plan>
 """

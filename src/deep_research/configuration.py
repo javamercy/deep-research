@@ -11,10 +11,9 @@ from deep_research.schemas import FrozenBaseModel
 class LLMModel(StrEnum):
     """Enum representing different LLM models available for use."""
 
-    DEEPSEEK_V4_FLASH = "deepseek/deepseek-v4-flash-0731:floor"
-    DEEPSEEK_V4_1_FLASH = "deepseek/deepseek-v4.1-flash:floor"
-    NEMOTRON_3_SUPER_FREE = "nvidia/nemotron-3-super-120b-a12b:free"
-    GLM_5_3_FLASH = "z-ai/glm-5.3-flash:floor"
+    DEEPSEEK_V4_FLASH = "deepseek/deepseek-v4-flash-0731:floor"  # effort: none, low, high (default), max
+    DEEPSEEK_V4_1_FLASH = "deepseek/deepseek-v4.1-flash:floor"  # effort: none, low, high (default), max
+    GLM_5_3_FLASH = "z-ai/glm-5.3-flash:floor"  # effort: low, high, max (default); reasoning mandatory
 
 
 class LLMModelConfig(FrozenBaseModel):
@@ -24,7 +23,7 @@ class LLMModelConfig(FrozenBaseModel):
     max_output_tokens: int
     temperature: float | None = None
     reasoning_effort: str | None = None
-    ignored_providers: list[str] = ["open-inference"]
+    ignored_providers: list[str] = ["open-inference", "morph"]
 
 
 class Configuration(FrozenBaseModel):
@@ -59,12 +58,13 @@ class Configuration(FrozenBaseModel):
     max_content_length: int = 20_000
 
     scoping_llm_config: LLMModelConfig = LLMModelConfig(
-        model=LLMModel.DEEPSEEK_V4_FLASH,
-        max_output_tokens=8_192,
+        model=LLMModel.GLM_5_3_FLASH,
+        reasoning_effort="high",
+        max_output_tokens=32_000,
     )
     research_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
-        max_output_tokens=8_192,
+        max_output_tokens=16_000,
     )
     summarization_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
@@ -76,7 +76,7 @@ class Configuration(FrozenBaseModel):
     )
     supervisor_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
-        max_output_tokens=8_192,
+        max_output_tokens=16_000,
     )
     writer_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,

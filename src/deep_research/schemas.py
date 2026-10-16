@@ -60,7 +60,10 @@ class ResearchTask(BaseModel):
         description="A detailed research objective that outlines the goal of the research task.",
     )
     success_criteria: str = Field(
-        description="The criteria that will be used to determine if the research objective was met.",
+        description="The criteria that will be used to determine if the research objective was met. Should be verifiable and evidence-based, not necessarily quantitative.",
+    )
+    depends_on: list[str] = Field(
+        description="A list of task IDs that this task depends on to be completed. Empty list if there are no dependencies.",
     )
     status: Literal["pending", "in_progress", "completed"] = Field(
         default="pending",

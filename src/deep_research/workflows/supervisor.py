@@ -2,7 +2,6 @@ import asyncio
 import logging
 from collections.abc import Sequence
 from typing import Literal, cast
-from xml.etree import ElementTree
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolCall, ToolMessage, filter_messages
 from langchain_core.runnables import RunnableConfig
@@ -11,6 +10,7 @@ from langgraph.graph import StateGraph
 from langgraph.types import Checkpointer, Command
 
 from deep_research.configuration import Configuration
+from deep_research.formatting import research_plan_to_xml
 from deep_research.models import init_openrouter_model
 from deep_research.prompts.supervisor import SUPERVISOR_SYSTEM_PROMPT, SUPERVISOR_USER_PROMPT
 from deep_research.schemas import ResearchPlan
@@ -100,7 +100,7 @@ async def supervisor(
         ),
         HumanMessage(
             content=SUPERVISOR_USER_PROMPT.format(
-                research_plan=_research_plan_to_xml(state["research_plan"])
+                research_plan=research_plan_to_xml(state["research_plan"])
             )
         ),
         *state.get("supervisor_messages", [])
@@ -259,21 +259,6 @@ def _apply_task_updates(
             ]
         }
     )
-
-
-def _research_plan_to_xml(plan: ResearchPlan) -> str:
-    root = ElementTree.Element("research_plan")
-    tasks_element = ElementTree.SubElement(root, "tasks")
-
-    for i, task in enumerate(plan.tasks, start=1):
-        task_element = ElementTree.SubElement(tasks_element, "task", attrib={"index": str(i)})
-        ElementTree.SubElement(task_element, "id").text = task.id
-        ElementTree.SubElement(task_element, "objective").text = task.objective
-        ElementTree.SubElement(task_element, "success_criteria").text = task.success_criteria
-        ElementTree.SubElement(task_element, "status").text = task.status
-
-    ElementTree.indent(root, space="  ")
-    return ElementTree.tostring(root, encoding="unicode", short_empty_elements=False)
 
 
 def _collect_tool_calls_from_supervisor_message(

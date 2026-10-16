@@ -28,7 +28,7 @@ tool_node = ToolNode(
 async def conduct_research(
         state: ResearcherState,
         config: RunnableConfig
-) -> Command[Literal["tool_node", "compress_research"]]:
+) -> Command[Literal["researcher_tools", "compress_research"]]:
     """Analyze current state and decide on next actions.
 
     The model analyzes the current conversation state and decides whether to:
@@ -65,7 +65,7 @@ async def conduct_research(
     response = await model_with_tools.ainvoke(messages, config=config)
 
     return Command(
-        goto="tool_node" if response.tool_calls else "compress_research",
+        goto="researcher_tools" if response.tool_calls else "compress_research",
         update={
             "researcher_messages": [response]
         }

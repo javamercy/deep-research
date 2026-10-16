@@ -23,8 +23,9 @@ def create_brief_spec() -> EvalSpec:
 
 def create_plan_spec() -> EvalSpec:
     judge_config = LLMModelConfig(
-        model=LLMModel.DEEPSEEK_V4_FLASH,
-        max_output_tokens=8192,
+        model=LLMModel.GLM_5_3_FLASH,
+        reasoning_effort="high",
+        max_output_tokens=16_000,
     )
 
     return EvalSpec(

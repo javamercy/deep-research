@@ -1,10 +1,7 @@
 from dotenv import load_dotenv
 from langsmith import Client
 
-from evals.final_report.dataset import ensure_final_report_dataset
-from evals.research.dataset import ensure_research_dataset
 from evals.scoping.dataset import ensure_brief_dataset, ensure_plan_dataset
-from evals.supervisor.dataset import ensure_supervisor_dataset
 
 
 def main() -> None:
@@ -17,14 +14,14 @@ def main() -> None:
     plan_dataset = ensure_plan_dataset(ls_client)
     print(f"Plan dataset updated: {plan_dataset.name}")
 
-    research_dataset = ensure_research_dataset(ls_client)
-    print(f"Research dataset: {research_dataset.name}")
+    # research_dataset = ensure_research_dataset(ls_client)
+    ##print(f"Research dataset updated: {research_dataset.name}")
 
-    supervisor_dataset = ensure_supervisor_dataset(ls_client)
-    print(f"Supervisor dataset: {supervisor_dataset.name}")
+    # supervisor_dataset = ensure_supervisor_dataset(ls_client)
+    # print(f"Supervisor dataset updated: {supervisor_dataset.name}")
 
-    final_report_dataset = ensure_final_report_dataset(ls_client)
-    print(f"Final report dataset: {final_report_dataset.name}")
+    # final_report_dataset = ensure_final_report_dataset(ls_client)
+    # print(f"Final report dataset updated: {final_report_dataset.name}")
 
 
 if __name__ == "__main__":

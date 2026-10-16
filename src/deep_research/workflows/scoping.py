@@ -8,6 +8,7 @@ from langgraph.graph import StateGraph
 from langgraph.types import Checkpointer, Command, interrupt
 
 from deep_research.configuration import Configuration
+from deep_research.formatting import research_plan_to_xml
 from deep_research.models import init_openrouter_structured_model
 from deep_research.prompts.scoping import CLARIFICATION_SYSTEM_PROMPT, CLARIFICATION_USER_PROMPT, RESEARCH_PLANNING_SYSTEM_PROMPT, RESEARCH_PLANNING_USER_PROMPT, WRITE_RESEARCH_BRIEF_SYSTEM_PROMPT, WRITE_RESEARCH_BRIEF_USER_PROMPT
 from deep_research.schemas import ClarificationAnswer, ClarificationDecision, ResearchPlan, ResearchPlanReview, ResearchQuestion
@@ -75,7 +76,7 @@ def ask_clarification(state: ScopingState) -> dict:
         state (ScopingState): The current state of the scoping process, including the clarification question.
 
     Returns:
-        dict: A partial state update containing the clarification question and the user's answer.
+        Partial state update containing the clarification question and the user's answer.
     """
 
     question = state["clarification_question"]
@@ -111,7 +112,7 @@ async def write_research_brief(
         config (RunnableConfig): The configuration for the runnable, including model settings.
 
     Returns:
-        dict: A partial state update containing the generated research brief.
+        Partial state update containing the generated research brief.
     """
 
     configuration = Configuration.from_runnable_config(config)
@@ -148,7 +149,7 @@ async def create_plan(
         config (RunnableConfig): The configuration for the runnable, including model settings.
 
     Returns:
-        Command: A command indicating the next node to go to and any state updates.
+        Command indicating the next node to go to and any state updates.
     """
 
     configuration = Configuration.from_runnable_config(config)
@@ -173,7 +174,7 @@ async def create_plan(
     if research_plan:
         messages.append(
             HumanMessage(
-                content=f"<research_plan>\n{research_plan.model_dump_json(indent=2)}\n</research_plan>\n\n"
+                content=f"{research_plan_to_xml(research_plan)}\n\n"
                         f"<user_feedback>\n{state["plan_feedback"]}\n</user_feedback>"
             )
         )
@@ -201,7 +202,7 @@ def review_plan(
         config (RunnableConfig): The configuration for the runnable, including model settings.
 
     Returns:
-        Command: A command indicating the next node to go to and any state updates.
+        Command indicating the next node to go to and any state updates.
     """
 
     response = interrupt(

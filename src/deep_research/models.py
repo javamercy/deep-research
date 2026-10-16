@@ -15,6 +15,8 @@ def init_openrouter_model(
 ) -> ChatOpenRouter:
     """Initialize a ChatOpenRouter model based on the provided LLMModelConfig.
 
+    If reasoning_effort is not specified in the configuration, it defaults to enabling reasoning.
+
     Args:
         llm_config (LLMModelConfig): Configuration for the LLM model.
         session_id (str | None): Optional unique identifier for the session.

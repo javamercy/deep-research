@@ -5,7 +5,7 @@
   ],
   "graphs": {
     "scoping_graph": "./src/deep_research/studio.py:scoping_graph",
-    "research_graph": "./src/deep_research/studio.py:research_graph",
+    "researcher_graph": "./src/deep_research/studio.py:researcher_graph",
     "supervisor_graph": "./src/deep_research/studio.py:supervisor_graph",
     "deep_research": "./src/deep_research/studio.py:deep_research_graph"
   },
