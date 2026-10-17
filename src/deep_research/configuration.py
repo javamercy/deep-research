@@ -40,7 +40,7 @@ class Configuration(FrozenBaseModel):
         max_researcher_tool_calls (int): Maximum number of tool calls for researchers.
         max_content_length (int): Maximum length of webpage content to be processed.
         scoping_llm_config (LLMModelConfig): Configuration for the scoping LLM model.
-        research_llm_config (LLMModelConfig): Configuration for the research LLM model.
+        researcher_llm_config (LLMModelConfig): Configuration for the researcher LLM model.
         summarization_llm_config (LLMModelConfig): Configuration for the summarization LLM model.
         compression_llm_config (LLMModelConfig): Configuration for the compression LLM model.
         supervisor_llm_config (LLMModelConfig): Configuration for the supervisor LLM model.
@@ -54,7 +54,7 @@ class Configuration(FrozenBaseModel):
     max_planning_iterations: int = 3
     max_concurrent_research_threads: int = 5
     max_supervisor_iterations: int = 1
-    max_researcher_tool_calls: int = 2
+    max_researcher_tool_calls: int = 3
     max_content_length: int = 20_000
 
     scoping_llm_config: LLMModelConfig = LLMModelConfig(
@@ -62,17 +62,20 @@ class Configuration(FrozenBaseModel):
         reasoning_effort="high",
         max_output_tokens=32_000,
     )
-    research_llm_config: LLMModelConfig = LLMModelConfig(
-        model=LLMModel.DEEPSEEK_V4_FLASH,
-        max_output_tokens=16_000,
+    researcher_llm_config: LLMModelConfig = LLMModelConfig(
+        model=LLMModel.GLM_5_3_FLASH,
+        reasoning_effort="high",
+        max_output_tokens=32_000,
     )
     summarization_llm_config: LLMModelConfig = LLMModelConfig(
-        model=LLMModel.DEEPSEEK_V4_FLASH,
-        max_output_tokens=16_000,
+        model=LLMModel.GLM_5_3_FLASH,
+        reasoning_effort="high",
+        max_output_tokens=32_000,
     )
     compression_llm_config: LLMModelConfig = LLMModelConfig(
-        model=LLMModel.DEEPSEEK_V4_FLASH,
-        max_output_tokens=16_000,
+        model=LLMModel.GLM_5_3_FLASH,
+        reasoning_effort="high",
+        max_output_tokens=32_000,
     )
     supervisor_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,

@@ -10,16 +10,16 @@ from langgraph.types import Checkpointer, Command
 
 from deep_research.configuration import Configuration
 from deep_research.models import init_openrouter_model
-from deep_research.prompts.research import COMPRESS_SYSTEM_PROMPT, COMPRESS_USER_PROMPT, RESEARCH_SYSTEM_PROMPT
+from deep_research.prompts.research import COMPRESS_SYSTEM_PROMPT, COMPRESS_USER_PROMPT, RESEARCHER_SYSTEM_PROMPT
 from deep_research.state import ResearcherInputState, ResearcherOutputState, ResearcherState
 from deep_research.tools.search import tavily_search
 from deep_research.utils import get_today_str
 
-TOOLS: list[BaseTool] = [tavily_search]
+_TOOLS: list[BaseTool] = [tavily_search]
 
-tool_node = ToolNode(
+_tool_node = ToolNode(
     name="tool_node",
-    tools=TOOLS,
+    tools=_TOOLS,
     messages_key="researcher_messages",
     handle_tool_errors=True
 )
@@ -40,7 +40,7 @@ async def conduct_research(
         config (RunnableConfig): The configuration for the runnable, including model settings.
 
     Returns:
-        Command: A command indicating the next node to go to and any state updates.
+        Command indicating the next node to go to and any state updates.
     """
 
     configuration = Configuration.from_runnable_config(config)
@@ -50,15 +50,15 @@ async def conduct_research(
 
     model_with_tools = (
         init_openrouter_model(
-            llm_config=configuration.research_llm_config,
+            llm_config=configuration.researcher_llm_config,
             session_id=configuration.session_id
         )
-        .bind_tools(TOOLS)
+        .bind_tools(_TOOLS)
     )
 
     messages: list[BaseMessage] = [
         SystemMessage(
-            content=RESEARCH_SYSTEM_PROMPT.format(date=get_today_str())
+            content=RESEARCHER_SYSTEM_PROMPT.format(date=get_today_str())
         ),
         *state["researcher_messages"],
     ]
@@ -86,14 +86,14 @@ async def researcher_tools(
         config (RunnableConfig): The configuration for the runnable, including model settings.
 
     Returns:
-        dict: A partial state update containing the results of the tool executions and the updated count of tool calls.
+        Partial state update containing the results of the tool executions and the updated count of tool calls.
     """
 
     last_message = state["researcher_messages"][-1]
     if not isinstance(last_message, AIMessage):
         raise ValueError("Expected an AIMessage before tool execution")
 
-    result = await tool_node.ainvoke(state, config=config)
+    result = await _tool_node.ainvoke(state, config=config)
 
     return {
         **result,
@@ -118,7 +118,7 @@ async def compress_research(
        config (RunnableConfig): The configuration for the runnable, including model settings.
 
    Returns:
-       dict: A partial state update containing the compressed research summary and raw notes.
+       Partial state update containing the compressed research summary and raw notes.
    """
 
     configuration = Configuration.from_runnable_config(config)
@@ -127,7 +127,7 @@ async def compress_research(
         session_id=configuration.session_id
     )
 
-    messages: list[BaseMessage] = [
+    messages = [
         SystemMessage(
             content=COMPRESS_SYSTEM_PROMPT.format(date=get_today_str())
         ),

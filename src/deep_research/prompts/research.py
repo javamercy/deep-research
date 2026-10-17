@@ -49,7 +49,7 @@ The following is the raw content of a webpage retrieved from a web search.
 </webpage_content>
 """
 
-RESEARCH_SYSTEM_PROMPT = """
+RESEARCHER_SYSTEM_PROMPT = """
 <role>
 You are a research assistant conducting research on the user's input topic. For context, today's date is {date}.
 </role>
@@ -60,7 +60,7 @@ You can use any of the tools provided to you to find resources that can help ans
 </task>
 
 <available_tools>
-You have access to one main tools:
+You have access to following tools:
 1. **tavily_search**: For conducting web searches to gather information
 </available_tools>
 
@@ -167,6 +167,5 @@ The preceding are about research conducted by an AI Researcher for the following
 </research_topic>
 
 Your task is to clean up these research findings while preserving ALL information that is relevant to answering this specific research question. 
-
 The resulting report will be used by another research agent to generate the final report. Preserve the relevant findings and source references needed for that subsequent step.
 """
