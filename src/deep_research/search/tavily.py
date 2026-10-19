@@ -66,7 +66,7 @@ def _deduplicate_and_map_search_results(search_results: list[dict]) -> list[Tavi
 
             url_digest = sha256(normalized_url.encode("utf-8")).hexdigest()
             mapped_results.append(TavilySearchResult(
-                id=url_digest[:6],
+                id=url_digest[:8],
                 url=url,
                 title=result.get("title", ""),
                 content=result.get("content", ""),

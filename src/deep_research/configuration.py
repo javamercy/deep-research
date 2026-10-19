@@ -54,7 +54,7 @@ class Configuration(FrozenBaseModel):
     max_planning_iterations: int = 3
     max_concurrent_research_threads: int = 5
     max_supervisor_iterations: int = 1
-    max_researcher_tool_calls: int = 2
+    max_researcher_tool_calls: int = 1
     max_content_length: int = 20_000
 
     scoping_llm_config: LLMModelConfig = LLMModelConfig(
@@ -99,7 +99,7 @@ class Configuration(FrozenBaseModel):
         Raises:
             ValueError: If 'thread_id' is not set in the configuration.
         """
-        
+
         configurable = config.get("configurable", {})
         field_names = cls.model_fields.keys()
         values = {

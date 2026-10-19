@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.store.memory import InMemoryStore
 from rich.console import Console
 
 from deep_research.state import ResearcherInputState, ResearcherOutputState
@@ -29,7 +30,10 @@ async def main():
         research_topic=topic,
     )
 
-    graph = build_researcher_graph(checkpointer=InMemorySaver())
+    graph = build_researcher_graph(
+        checkpointer=InMemorySaver(),
+        store=InMemoryStore()
+    )
     result = cast(
         ResearcherOutputState,
         # pyrefly: ignore[no-matching-overload]

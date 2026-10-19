@@ -1,14 +1,19 @@
+import asyncio
+import logging
 from typing import Annotated, Literal
 
 from langchain_core.tools import InjectedToolArg, tool
 from langgraph.prebuilt import ToolRuntime
+from langgraph.store.base import BaseStore
 
 from deep_research.configuration import Configuration
 from deep_research.formatting import processed_search_results_to_xml
 from deep_research.openrouter import init_openrouter_structured_model
 from deep_research.schemas import ContentSummary
 from deep_research.search.processing import process_search_results
-from deep_research.search.tavily import search_tavily
+from deep_research.search.tavily import TavilySearchResult, search_tavily
+
+logger = logging.getLogger(__name__)
 
 
 @tool(parse_docstring=True)
@@ -46,6 +51,13 @@ async def tavily_search(
         include_raw_content=True,
     )
 
+    store = runtime.store
+    if store is None:
+        raise ValueError("ToolRuntime store is not available.")
+
+    namespace = ("sessions", configuration.session_id, "sources")
+    await _store_results(store, namespace, search_results)
+
     processed_results = await process_search_results(
         search_results=search_results,
         summarization_model=summarization_model,
@@ -53,3 +65,24 @@ async def tavily_search(
     )
 
     return processed_search_results_to_xml(processed_results)
+
+
+async def _store_results(
+        store: BaseStore,
+        namespace: tuple[str, ...],
+        search_results: list[TavilySearchResult]
+) -> None:
+    try:
+        await asyncio.gather(
+            *[
+                store.aput(
+                    namespace,
+                    result.id,
+                    result.model_dump(mode="json"),
+                    index=False
+                )
+                for result in search_results
+            ]
+        )
+    except Exception:
+        logger.exception("Failed to store search results")

@@ -6,6 +6,7 @@ from langchain_core.tools import BaseTool
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
+from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer, Command
 
 from deep_research.configuration import Configuration
@@ -151,11 +152,12 @@ async def compress_research(
     }
 
 
-def build_researcher_graph(checkpointer: Checkpointer):
+def build_researcher_graph(checkpointer: Checkpointer, store: BaseStore | None = None):
     """Build the research workflow graph with the given checkpointer.
 
     Args:
         checkpointer (Checkpointer): The checkpointer to use for the graph.
+        store (BaseStore): The store to use for the graph.
         
     Returns:
         The compiled research workflow graph.
@@ -206,4 +208,4 @@ def build_researcher_graph(checkpointer: Checkpointer):
     builder.add_edge("researcher_tools", "conduct_research")
     builder.add_edge("compress_research", END)
 
-    return builder.compile(checkpointer=checkpointer)
+    return builder.compile(checkpointer=checkpointer, store=store)

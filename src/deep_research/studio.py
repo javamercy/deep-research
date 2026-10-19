@@ -5,7 +5,7 @@ from deep_research.workflows.supervisor import build_supervisor_graph
 
 scoping_graph = build_scoping_graph(checkpointer=None)
 
-researcher_graph = build_researcher_graph(checkpointer=None)
+researcher_graph = build_researcher_graph(checkpointer=None, store=None)
 
 supervisor_graph = build_supervisor_graph(checkpointer=None)
 
