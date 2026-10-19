@@ -5,7 +5,7 @@ from langgraph.prebuilt import ToolRuntime
 
 from deep_research.configuration import Configuration
 from deep_research.formatting import processed_search_results_to_xml
-from deep_research.models import init_openrouter_structured_model
+from deep_research.openrouter import init_openrouter_structured_model
 from deep_research.schemas import ContentSummary
 from deep_research.search.processing import process_search_results
 from deep_research.search.tavily import search_tavily

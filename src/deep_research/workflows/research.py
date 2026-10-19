@@ -9,7 +9,7 @@ from langgraph.prebuilt import ToolNode
 from langgraph.types import Checkpointer, Command
 
 from deep_research.configuration import Configuration
-from deep_research.models import init_openrouter_model
+from deep_research.openrouter import init_openrouter_model
 from deep_research.prompts.research import COMPRESS_SYSTEM_PROMPT, COMPRESS_USER_PROMPT, RESEARCHER_SYSTEM_PROMPT
 from deep_research.state import ResearcherInputState, ResearcherOutputState, ResearcherState
 from deep_research.tools.search import tavily_search

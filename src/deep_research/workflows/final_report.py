@@ -2,7 +2,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 
 from deep_research.configuration import Configuration
-from deep_research.models import init_openrouter_model
+from deep_research.openrouter import init_openrouter_model
 from deep_research.prompts.final_report import GENERATE_FINAL_REPORT_SYSTEM_PROMPT, GENERATE_FINAL_REPORT_USER_PROMPT
 from deep_research.state import AgentState
 from deep_research.utils import get_today_str

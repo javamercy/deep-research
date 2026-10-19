@@ -11,7 +11,7 @@ from langgraph.types import Checkpointer, Command
 
 from deep_research.configuration import Configuration
 from deep_research.formatting import research_plan_to_xml
-from deep_research.models import init_openrouter_model
+from deep_research.openrouter import init_openrouter_model
 from deep_research.prompts.supervisor import SUPERVISOR_SYSTEM_PROMPT, SUPERVISOR_USER_PROMPT
 from deep_research.schemas import ResearchPlan
 from deep_research.state import ResearcherInputState, SupervisorInputState, SupervisorOutputState, SupervisorState

@@ -5,7 +5,7 @@ from langsmith.schemas import Run
 
 from deep_research.configuration import LLMModelConfig
 from deep_research.formatting import research_plan_to_xml
-from deep_research.models import init_openrouter_structured_model
+from deep_research.openrouter import init_openrouter_structured_model
 from deep_research.schemas import ResearchPlan
 from evals.scoping.prompts import BRIEF_CRITERIA_SYSTEM_PROMPT, BRIEF_CRITERIA_USER_PROMPT, BRIEF_GROUNDEDNESS_SYSTEM_PROMPT, BRIEF_GROUNDEDNESS_USER_PROMPT, PLAN_ADEQUACY_SYSTEM_PROMPT, PLAN_ADEQUACY_USER_PROMPT
 from evals.scoping.schemas import BriefCriteriaEvaluation, BriefGroundednessEvaluation, PlanAdequacyEvaluation
