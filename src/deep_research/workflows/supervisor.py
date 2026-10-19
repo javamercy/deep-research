@@ -5,7 +5,7 @@ from typing import Literal, cast
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolCall, ToolMessage, filter_messages
 from langchain_core.runnables import RunnableConfig
-from langgraph.constants import END, START
+from langgraph.constants import START
 from langgraph.graph import StateGraph
 from langgraph.types import Checkpointer, Command
 
@@ -74,7 +74,7 @@ async def supervisor(
 
     if state.get("supervisor_iterations", 0) >= configuration.max_supervisor_iterations:
         return Command(
-            goto=END,
+            goto="__end__",
             update={
                 "notes": get_notes_from_tool_calls(
                     state.get("supervisor_messages", [])
@@ -177,7 +177,7 @@ async def supervisor_tools(
 
         if research_complete:
             should_end = True
-            next_step = END
+            next_step = "__end__"
 
         elif conduct_research_calls:
             researcher_agent = build_researcher_graph(checkpointer=None)

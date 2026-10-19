@@ -1,5 +1,4 @@
 import asyncio
-from pathlib import Path
 from typing import cast
 from uuid import uuid4
 
@@ -9,37 +8,36 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 from rich.console import Console
 
-from deep_research.state import ResearcherOutputState, ResearcherState
-from deep_research.utils import display_messages
+from deep_research.state import ResearcherInputState, ResearcherOutputState
+from deep_research.utils import display_markdown
 from deep_research.workflows.research import build_researcher_graph
 
 
 async def main():
     load_dotenv()
 
-    brief_path = Path(__file__).parent / "examples" / "research_brief.txt"
-    research_brief = brief_path.read_text(encoding="utf-8")
-
-    config = RunnableConfig(configurable={"thread_id": str(uuid4())})
-
-    researcher_state = ResearcherState(
+    config = RunnableConfig(
+        run_id=uuid4(),
+        configurable={"thread_id": str(uuid4())}
+    )
+    topic = "Research the impact of climate change on global agriculture and food security."
+    input_state = ResearcherInputState(
         researcher_messages=[
-            HumanMessage(content=research_brief)
+            HumanMessage(content=topic)
         ],
-        tool_call_iterations=0,
-        research_topic="Researching the most delicious and authentic kebab restaurants in Istanbul, Turkey.",
-        compressed_research="",
-        raw_notes=[]
+        researcher_tool_calls=0,
+        research_topic=topic,
     )
 
     graph = build_researcher_graph(checkpointer=InMemorySaver())
     result = cast(
         ResearcherOutputState,
-        await graph.ainvoke(researcher_state, config=config)
+        # pyrefly: ignore[no-matching-overload]
+        await graph.ainvoke(input_state, config=config)
     )
 
     console = Console()
-    display_messages(result["researcher_messages"], console=console)
+    display_markdown(result["compressed_research"], console=console)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ from langchain_core.tools import InjectedToolArg, tool
 from langgraph.prebuilt import ToolRuntime
 
 from deep_research.configuration import Configuration
+from deep_research.formatting import processed_search_results_to_xml
 from deep_research.models import init_openrouter_structured_model
 from deep_research.schemas import ContentSummary
 from deep_research.search.processing import process_search_results
@@ -38,7 +39,7 @@ async def tavily_search(
         session_id=configuration.session_id,
     )
 
-    unique_results = await search_tavily(
+    search_results = await search_tavily(
         query,
         max_results=max_results,
         topic=topic,
@@ -46,23 +47,9 @@ async def tavily_search(
     )
 
     processed_results = await process_search_results(
-        unique_results=unique_results,
+        search_results=search_results,
         summarization_model=summarization_model,
         max_content_length=configuration.max_content_length,
     )
-    return _format_search_results(processed_results)
 
-
-def _format_search_results(processed_results: dict) -> str:
-    if not processed_results:
-        raise ValueError("No valid search results found. Please try different search queries.")
-
-    formatted_output = "Search Results:"
-
-    for i, (url, result) in enumerate(processed_results.items(), 1):
-        formatted_output += f"\n\n--- SOURCE {i}: {result['title']} ---\n"
-        formatted_output += f"URL: {url}\n\n"
-        formatted_output += f"SUMMARY:\n{result['content']}\n\n"
-        formatted_output += "-" * 80 + "\n"
-
-    return formatted_output
+    return processed_search_results_to_xml(processed_results)

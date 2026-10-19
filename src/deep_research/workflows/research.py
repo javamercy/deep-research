@@ -15,19 +15,12 @@ from deep_research.state import ResearcherInputState, ResearcherOutputState, Res
 from deep_research.tools.search import tavily_search
 from deep_research.utils import get_today_str
 
-_TOOLS: list[BaseTool] = [tavily_search]
-
-_tool_node = ToolNode(
-    name="tool_node",
-    tools=_TOOLS,
-    messages_key="researcher_messages",
-    handle_tool_errors=True
-)
-
 
 async def conduct_research(
         state: ResearcherState,
-        config: RunnableConfig
+        config: RunnableConfig,
+        *,
+        tools: list[BaseTool]
 ) -> Command[Literal["researcher_tools", "compress_research"]]:
     """Analyze current state and decide on next actions.
 
@@ -38,6 +31,7 @@ async def conduct_research(
     Args:
         state (ResearcherState): The current state of the researcher, including messages and tool calls.
         config (RunnableConfig): The configuration for the runnable, including model settings.
+        tools (list[BaseTool]): The list of tools available for the researcher to use.
 
     Returns:
         Command indicating the next node to go to and any state updates.
@@ -53,7 +47,7 @@ async def conduct_research(
             llm_config=configuration.researcher_llm_config,
             session_id=configuration.session_id
         )
-        .bind_tools(_TOOLS)
+        .bind_tools(tools)
     )
 
     messages: list[BaseMessage] = [
@@ -74,7 +68,9 @@ async def conduct_research(
 
 async def researcher_tools(
         state: ResearcherState,
-        config: RunnableConfig
+        config: RunnableConfig,
+        *,
+        tool_node: ToolNode
 ) -> dict:
     """Execute the tool calls made by the researcher.
 
@@ -84,6 +80,7 @@ async def researcher_tools(
     Args:
         state (ResearcherState): The current state of the researcher, including messages and tool calls.
         config (RunnableConfig): The configuration for the runnable, including model settings.
+        tool_node (ToolNode): The node responsible for executing the tool calls.
 
     Returns:
         Partial state update containing the results of the tool executions and the updated count of tool calls.
@@ -93,7 +90,7 @@ async def researcher_tools(
     if not isinstance(last_message, AIMessage):
         raise ValueError("Expected an AIMessage before tool execution")
 
-    result = await _tool_node.ainvoke(state, config=config)
+    result = await tool_node.ainvoke(state, config=config)
 
     return {
         **result,
@@ -164,6 +161,35 @@ def build_researcher_graph(checkpointer: Checkpointer):
         The compiled research workflow graph.
     """
 
+    tools: list[BaseTool] = [tavily_search]
+
+    tool_node = ToolNode(
+        name="tool_node",
+        tools=tools,
+        messages_key="researcher_messages",
+        handle_tool_errors=True
+    )
+
+    async def conduct_research_node(
+            state: ResearcherState,
+            config: RunnableConfig
+    ) -> Command[Literal["researcher_tools", "compress_research"]]:
+        return await conduct_research(
+            state,
+            config,
+            tools=tools
+        )
+
+    async def researcher_tools_node(
+            state: ResearcherState,
+            config: RunnableConfig
+    ) -> dict:
+        return await researcher_tools(
+            state,
+            config,
+            tool_node=tool_node,
+        )
+
     # pyrefly: ignore [bad-specialization]
     builder = StateGraph(
         ResearcherState,
@@ -172,9 +198,9 @@ def build_researcher_graph(checkpointer: Checkpointer):
         # pyrefly: ignore [bad-argument-type]
         output_schema=ResearcherOutputState)
 
-    builder.add_node("conduct_research", conduct_research)
+    builder.add_node("conduct_research", conduct_research_node)
+    builder.add_node("researcher_tools", researcher_tools_node)
     builder.add_node("compress_research", compress_research)
-    builder.add_node("researcher_tools", researcher_tools)
 
     builder.add_edge(START, "conduct_research")
     builder.add_edge("researcher_tools", "conduct_research")

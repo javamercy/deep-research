@@ -3,7 +3,7 @@ from typing import Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, get_buffer_string
 from langchain_core.runnables import RunnableConfig
-from langgraph.constants import END, START
+from langgraph.constants import START
 from langgraph.graph import StateGraph
 from langgraph.types import Checkpointer, Command, interrupt
 
@@ -181,7 +181,7 @@ async def create_plan(
 
     research_plan = await planning_model.ainvoke(messages, config=config)
 
-    goto = "review_plan" if configuration.allow_collaborative_planning else END
+    goto = "review_plan" if configuration.allow_collaborative_planning else "__end__"
     return Command(
         goto=goto,
         update={
@@ -223,7 +223,7 @@ def review_plan(
         logger.warning("Maximum planning iterations reached. Proceeding with the current research plan.")
 
     return Command(
-        goto=END if should_end else "create_plan",
+        goto="__end__" if should_end else "create_plan",
         update={
             "plan_approved": response.approved,
             "plan_feedback": response.feedback

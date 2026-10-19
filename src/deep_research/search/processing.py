@@ -5,52 +5,69 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import Runnable
 
 from deep_research.prompts.research import SUMMARIZE_WEBPAGE_SYSTEM_PROMPT, SUMMARIZE_WEBPAGE_USER_PROMPT
-from deep_research.schemas import ContentSummary
+from deep_research.schemas import ContentSummary, FrozenBaseModel
+from deep_research.search.tavily import TavilySearchResult
 from deep_research.utils import get_today_str
 
 logger = logging.getLogger(__name__)
 
 
+class ProcessedSearchResult(FrozenBaseModel):
+    """Schema for processed search result with summary and key excerpts."""
+
+    id: str
+    url: str
+    title: str
+    summary: str
+    key_excerpts: str | None = None
+
+
 async def process_search_results(
-        unique_results: dict,
+        search_results: list[TavilySearchResult],
         *,
         summarization_model: Runnable[LanguageModelInput, ContentSummary],
-        max_content_length: int = 10000
-) -> dict:
+        max_content_length: int = 20_000
+) -> list[ProcessedSearchResult]:
     """Process search results by summarizing content where available.
 
     Args:
-        unique_results: Dictionary of unique search results
+        search_results: List of TavilySearchResult objects
         summarization_model: Runnable model for summarizing content
         max_content_length: Maximum length of content to summarize
 
     Returns:
-        Dictionary of processed results with summaries
+        List of ProcessedSearchResult objects with summaries and key excerpts
     """
 
-    processed_results = {}
+    processed_results: list[ProcessedSearchResult] = []
 
-    for url, result in unique_results.items():
-        if not result.get("raw_content"):
-            content = result["content"]
-        else:
-            webpage_content = result["raw_content"]
+    for result in search_results:
+        summary = ""
+        key_excerpts = None
+        if result.raw_content:
+            webpage_content = result.raw_content
             if len(webpage_content) > max_content_length:
                 webpage_content = webpage_content[:max_content_length] + "..."
 
             try:
-                content = await _summarize_webpage_content(
+                content_summary = await _summarize_webpage_content(
                     webpage_content,
                     summarization_model=summarization_model
                 )
+                summary = content_summary.summary
+                key_excerpts = content_summary.key_excerpts
             except Exception as e:
-                logger.error(f"Error summarizing content for URL {url}: {e}")
-                content = webpage_content
+                logger.error(f"Error summarizing content for URL {result.url}: {e}")
+        else:
+            summary = result.content
 
-        processed_results[url] = {
-            "title": result["title"],
-            "content": content
-        }
+        processed_results.append(ProcessedSearchResult(
+            id=result.id,
+            title=result.title,
+            url=result.url,
+            summary=summary,
+            key_excerpts=key_excerpts
+        ))
 
     return processed_results
 
@@ -59,7 +76,7 @@ async def _summarize_webpage_content(
         webpage_content: str,
         *,
         summarization_model: Runnable[LanguageModelInput, ContentSummary],
-) -> str:
+) -> ContentSummary:
     messages = [
         SystemMessage(
             content=SUMMARIZE_WEBPAGE_SYSTEM_PROMPT.format(date=get_today_str())
@@ -68,10 +85,4 @@ async def _summarize_webpage_content(
             content=SUMMARIZE_WEBPAGE_USER_PROMPT.format(webpage_content=webpage_content)
         )
     ]
-    summary = await summarization_model.ainvoke(messages)
-    formatted_summary = (
-        f"<summary>\n{summary.summary}\n</summary>\n\n"
-        f"<key_excerpts>\n{summary.key_excerpts}\n</key_excerpts>"
-    )
-    
-    return formatted_summary
+    return await summarization_model.ainvoke(messages)

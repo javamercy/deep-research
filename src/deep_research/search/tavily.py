@@ -1,8 +1,27 @@
+from hashlib import sha256
 from typing import Literal
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from tavily import AsyncTavilyClient
 
+from deep_research.schemas import FrozenBaseModel
+
+_TRACKING_PARAM_PREFIXES = ("utm_",)
+_TRACKING_PARAMS = frozenset({"gclid", "fbclid", "msclkid", "igshid", "mc_cid", "mc_eid"})
+_DEFAULT_PORTS = frozenset({80, 443})
+
 client = AsyncTavilyClient()
+
+
+class TavilySearchResult(FrozenBaseModel):
+    """Schema for a single search result from Tavily API."""
+
+    id: str
+    url: str
+    title: str
+    content: str
+    score: float
+    raw_content: str | None = None
 
 
 async def search_tavily(
@@ -11,7 +30,7 @@ async def search_tavily(
         max_results: int = 5,
         topic: Literal["general", "news", "finance"] = "general",
         include_raw_content: bool = True
-) -> dict:
+) -> list[TavilySearchResult]:
     """Perform search using Tavily API and return unique results.
 
     Args:
@@ -24,7 +43,7 @@ async def search_tavily(
         Dictionary of unique search results keyed by URL
     """
 
-    result = await client.search(
+    response = await client.search(
         query=query,
         max_results=max_results,
         topic=topic,
@@ -32,14 +51,50 @@ async def search_tavily(
         include_images=False,
     )
 
-    return _deduplicate_search_results(result.get("results", []))
+    return _deduplicate_and_map_search_results(response.get("results", []))
 
 
-def _deduplicate_search_results(search_results: list[dict]) -> dict:
-    seen_urls = {}
+def _deduplicate_and_map_search_results(search_results: list[dict]) -> list[TavilySearchResult]:
+    mapped_results: list[TavilySearchResult] = []
+
+    seen_urls: set[str] = set()
     for result in search_results:
         url = result["url"]
-        if url not in seen_urls:
-            seen_urls[url] = result
+        normalized_url = _normalize_url(url)
+        if normalized_url not in seen_urls:
+            seen_urls.add(normalized_url)
 
-    return seen_urls
+            url_digest = sha256(normalized_url.encode("utf-8")).hexdigest()
+            mapped_results.append(TavilySearchResult(
+                id=url_digest[:6],
+                url=url,
+                title=result.get("title", ""),
+                content=result.get("content", ""),
+                score=result.get("score", 0.0),
+                raw_content=result.get("raw_content", None)
+            ))
+
+    return mapped_results
+
+
+def _normalize_url(url: str) -> str:
+    """Return a canonical form of a URL, used only as an identity key.
+
+    Two URLs that point to the same page should produce the same string.
+    The result is not meant to be fetched or shown to the user.
+    """
+
+    parts = urlsplit(url.strip())
+    host = (parts.hostname or "").removeprefix("www.")
+    if parts.port is not None and parts.port not in _DEFAULT_PORTS:
+        host = f"{host}:{parts.port}"
+
+    path = parts.path.rstrip("/")
+
+    query_params = sorted(
+        (key, value)
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        if key.lower() not in _TRACKING_PARAMS and
+        not key.lower().startswith(_TRACKING_PARAM_PREFIXES)
+    )
+    return urlunsplit(("", host, path, urlencode(query_params), ""))

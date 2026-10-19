@@ -47,33 +47,33 @@ class Configuration(FrozenBaseModel):
         writer_llm_config (LLMModelConfig): Configuration for the writer LLM model.
     """
 
-    session_id: str | None = None
+    session_id: str
     max_structured_output_retries: int = 3
     allow_clarification: bool = True
     allow_collaborative_planning: bool = True
     max_planning_iterations: int = 3
     max_concurrent_research_threads: int = 5
     max_supervisor_iterations: int = 1
-    max_researcher_tool_calls: int = 3
+    max_researcher_tool_calls: int = 2
     max_content_length: int = 20_000
 
     scoping_llm_config: LLMModelConfig = LLMModelConfig(
-        model=LLMModel.GLM_5_3_FLASH,
+        model=LLMModel.DEEPSEEK_V4_FLASH,
         reasoning_effort="high",
         max_output_tokens=32_000,
     )
     researcher_llm_config: LLMModelConfig = LLMModelConfig(
-        model=LLMModel.GLM_5_3_FLASH,
+        model=LLMModel.DEEPSEEK_V4_FLASH,
         reasoning_effort="high",
         max_output_tokens=32_000,
     )
     summarization_llm_config: LLMModelConfig = LLMModelConfig(
-        model=LLMModel.GLM_5_3_FLASH,
+        model=LLMModel.DEEPSEEK_V4_FLASH,
         reasoning_effort="high",
         max_output_tokens=32_000,
     )
     compression_llm_config: LLMModelConfig = LLMModelConfig(
-        model=LLMModel.GLM_5_3_FLASH,
+        model=LLMModel.DEEPSEEK_V4_FLASH,
         reasoning_effort="high",
         max_output_tokens=32_000,
     )
@@ -87,24 +87,31 @@ class Configuration(FrozenBaseModel):
     )
 
     @classmethod
-    def from_runnable_config(cls, config: RunnableConfig | None = None) -> Configuration:
+    def from_runnable_config(cls, config: RunnableConfig) -> Configuration:
         """Create a Configuration instance from a RunnableConfig.
 
         Args:
-            config (RunnableConfig | None): The RunnableConfig instance to extract configuration from.
+            config (RunnableConfig): The RunnableConfig instance to extract configuration from.
 
         Returns:
-            Configuration: An instance of the Configuration class populated with values from the RunnableConfig.
+            Configuration instance populated with values from the RunnableConfig.
+
+        Raises:
+            ValueError: If 'thread_id' is not set in the configuration.
         """
-        configurable = config.get("configurable", {}) if config else {}
+        
+        configurable = config.get("configurable", {})
         field_names = cls.model_fields.keys()
         values = {
-            field_name: os.getenv(field_name.upper(), configurable.get(field_name))
+            field_name: configurable.get(field_name, os.getenv(field_name.upper()))
             for field_name in field_names
+            if field_name != "session_id"
         }
 
         thread_id = configurable.get("thread_id")
-        if thread_id is not None:
-            values["session_id"] = str(thread_id)
+        if thread_id is None:
+            raise ValueError("thread_id is not set in the configuration")
+
+        values["session_id"] = str(thread_id)
 
         return cls(**{key: value for key, value in values.items() if value is not None})

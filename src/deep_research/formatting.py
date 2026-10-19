@@ -1,6 +1,7 @@
 from xml.etree import ElementTree
 
 from deep_research.schemas import ResearchPlan
+from deep_research.search.processing import ProcessedSearchResult
 
 
 def research_plan_to_xml(plan: ResearchPlan) -> str:
@@ -30,6 +31,24 @@ def research_plan_to_xml(plan: ResearchPlan) -> str:
             ElementTree.SubElement(depends_on_element, "task_id").text = depends_id
 
         ElementTree.SubElement(task_element, "status").text = task.status
+
+    ElementTree.indent(root, space="  ")
+    return ElementTree.tostring(root, encoding="unicode", short_empty_elements=False)
+
+
+def processed_search_results_to_xml(processed_results: list[ProcessedSearchResult]) -> str:
+    """Convert processed search results to XML format."""
+
+    root = ElementTree.Element("search_results")
+
+    for result in processed_results:
+        result_element = ElementTree.SubElement(root, "result", attrib={"id": result.id})
+        ElementTree.SubElement(result_element, "url").text = result.url
+        ElementTree.SubElement(result_element, "title").text = result.title
+        ElementTree.SubElement(result_element, "summary").text = result.summary
+
+        if result.key_excerpts is not None:
+            ElementTree.SubElement(result_element, "key_excerpts").text = result.key_excerpts
 
     ElementTree.indent(root, space="  ")
     return ElementTree.tostring(root, encoding="unicode", short_empty_elements=False)
