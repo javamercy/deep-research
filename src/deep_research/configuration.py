@@ -101,17 +101,16 @@ class Configuration(FrozenBaseModel):
         """
 
         configurable = config.get("configurable", {})
+        thread_id = configurable.get("thread_id")
+        if thread_id is None:
+            raise ValueError("thread_id is not set in the configuration")
+
         field_names = cls.model_fields.keys()
         values = {
             field_name: configurable.get(field_name, os.getenv(field_name.upper()))
             for field_name in field_names
             if field_name != "session_id"
         }
-
-        thread_id = configurable.get("thread_id")
-        if thread_id is None:
-            raise ValueError("thread_id is not set in the configuration")
-
         values["session_id"] = str(thread_id)
 
         return cls(**{key: value for key, value in values.items() if value is not None})
