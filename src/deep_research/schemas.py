@@ -89,3 +89,50 @@ class ResearchPlanReview(FrozenBaseModel):
         default="",
         description="Feedback on the research plan. Empty if the plan is approved.",
     )
+
+
+class ResearchFinding(FrozenBaseModel):
+    """Schema for single factual research finding attributed to source IDs."""
+
+    statement: str = Field(
+        description=(
+            "A comprehensive factual statement or finding, preserving exact numbers, "
+            "dates, names, quotes, technical details, qualifications and disagreements. "
+            "Do NOT include inline citation brackets like [1] or raw URLs in this text; "
+            "citations are attached automatically from source_ids."
+        )
+    )
+
+    source_ids: list[str] = Field(
+        description="List of 8-character source IDs (from <result id='...'>) that directly substantiate this statement."
+    )
+
+
+class ResearchSection(FrozenBaseModel):
+    """Schema for thematic section grouping related research findings."""
+
+    heading: str = Field(
+        description="Descriptive heading for this thematic group of research findings."
+    )
+    findings: list[ResearchFinding] = Field(
+        description="Comprehensive list of evidence-backed findings under this heading."
+    )
+
+
+class DraftResearch(FrozenBaseModel):
+    """Schema for structured research compression before citation and evidence verification."""
+
+    queries_and_tool_calls: list[str] = Field(
+        description="List of search queries and external retrieval tool calls executed during the research conversation."
+    )
+    sections: list[ResearchSection] = Field(
+        description="Thematic sections organizing all relevant research findings and their source IDs."
+    )
+
+
+class VerifiedResearch(FrozenBaseModel):
+    """Schema for verified and source-validated research findings."""
+
+    sections: list[ResearchSection] = Field(
+        description="Verified thematic sections containing only source-substantiated findings with validated source IDs."
+    )
