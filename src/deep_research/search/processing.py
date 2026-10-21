@@ -27,7 +27,7 @@ async def process_search_results(
         *,
         summarization_model: Runnable[LanguageModelInput, ContentSummary],
         max_content_length: int = 20_000
-) -> list[ProcessedSearchResult]:
+) -> dict[str, ProcessedSearchResult]:
     """Process search results by summarizing content where available.
 
     Args:
@@ -36,10 +36,10 @@ async def process_search_results(
         max_content_length: Maximum length of content to summarize
 
     Returns:
-        List of ProcessedSearchResult objects with summaries and key excerpts
+        Dictionary of ProcessedSearchResult objects keyed by result ID
     """
 
-    processed_results: list[ProcessedSearchResult] = []
+    processed_results: dict[str, ProcessedSearchResult] = {}
 
     for result in search_results:
         summary = ""
@@ -61,13 +61,13 @@ async def process_search_results(
         else:
             summary = result.content
 
-        processed_results.append(ProcessedSearchResult(
+        processed_results[result.id] = ProcessedSearchResult(
             id=result.id,
             title=result.title,
             url=result.url,
             summary=summary,
             key_excerpts=key_excerpts
-        ))
+        )
 
     return processed_results
 

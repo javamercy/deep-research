@@ -10,8 +10,9 @@ from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer, Command
 
 from deep_research.configuration import Configuration
-from deep_research.openrouter import init_openrouter_model
+from deep_research.openrouter import init_openrouter_model, init_openrouter_structured_model
 from deep_research.prompts.research import COMPRESS_SYSTEM_PROMPT, COMPRESS_USER_PROMPT, RESEARCHER_SYSTEM_PROMPT
+from deep_research.schemas import DraftResearch
 from deep_research.state import ResearcherInputState, ResearcherOutputState, ResearcherState
 from deep_research.tools.search import tavily_search
 from deep_research.utils import get_today_str
@@ -120,9 +121,11 @@ async def compress_research(
    """
 
     configuration = Configuration.from_runnable_config(config)
-    compress_model = init_openrouter_model(
-        llm_config=configuration.compression_llm_config,
-        session_id=configuration.session_id
+    compress_model = init_openrouter_structured_model(
+        configuration.compression_llm_config,
+        output_schema=DraftResearch,
+        session_id=configuration.session_id,
+        max_retries=configuration.max_structured_output_retries
     )
 
     messages = [
@@ -134,7 +137,7 @@ async def compress_research(
             content=COMPRESS_USER_PROMPT.format(research_topic=state["research_topic"])
         ),
     ]
-    response = await compress_model.ainvoke(messages)
+    draft_research = await compress_model.ainvoke(messages)
 
     # TODO: Consider using a more structured approach to extract raw notes,
     #  separating them by message type or source for better clarity and analysis.
@@ -146,10 +149,19 @@ async def compress_research(
     ]
 
     return {
-        "compressed_research": response.text,
+        "draft_research": draft_research,
         # TODO: See todo above.
         "raw_notes": ["\n".join(raw_notes)]
     }
+
+
+async def verify_research(
+        state: ResearcherState,
+        config: RunnableConfig,
+        *,
+        store: BaseStore
+) -> dict:
+    raise NotImplementedError("Research verification is not implemented yet.")
 
 
 def build_researcher_graph(checkpointer: Checkpointer, store: BaseStore | None = None):

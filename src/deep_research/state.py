@@ -5,7 +5,7 @@ from typing import Annotated, TypedDict
 from langchain_core.messages import BaseMessage
 from langgraph.graph import MessagesState, add_messages
 
-from deep_research.schemas import ResearchPlan
+from deep_research.schemas import DraftResearch, ResearchPlan
 
 
 class AgentInputState(MessagesState):
@@ -110,6 +110,7 @@ class ResearcherState(TypedDict):
     researcher_messages: Annotated[Sequence[BaseMessage], add_messages]
     research_topic: str
     researcher_tool_calls: int
+    draft_research: DraftResearch
     compressed_research: str
     raw_notes: Annotated[list[str], operator.add]
 
@@ -164,6 +165,6 @@ class SupervisorOutputState(TypedDict):
         research_plan (ResearchPlan): The structured research plan derived from the research brief.
         notes (list[str]): Processed and structured notes ready for final report generation.
     """
-    
+
     research_plan: ResearchPlan
     notes: Annotated[list[str], operator.add]

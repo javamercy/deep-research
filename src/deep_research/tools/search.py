@@ -1,17 +1,16 @@
-import asyncio
 import logging
 from typing import Annotated, Literal
 
 from langchain_core.tools import InjectedToolArg, tool
 from langgraph.prebuilt import ToolRuntime
-from langgraph.store.base import BaseStore
 
 from deep_research.configuration import Configuration
 from deep_research.formatting import processed_search_results_to_xml
+from deep_research.memory.sources import StoredSearchResult, store_sources
 from deep_research.openrouter import init_openrouter_structured_model
 from deep_research.schemas import ContentSummary
 from deep_research.search.processing import process_search_results
-from deep_research.search.tavily import TavilySearchResult, search_tavily
+from deep_research.search.tavily import search_tavily
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +34,10 @@ async def tavily_search(
         Formatted string of search results with summaries
     """
 
+    store = runtime.store
+    if store is None:
+        raise ValueError("ToolRuntime store is not available.")
+
     configuration = Configuration.from_runnable_config(runtime.config)
 
     summarization_model = init_openrouter_structured_model(
@@ -51,38 +54,30 @@ async def tavily_search(
         include_raw_content=True,
     )
 
-    store = runtime.store
-    if store is None:
-        raise ValueError("ToolRuntime store is not available.")
-
-    namespace = ("sessions", configuration.session_id, "sources")
-    await _store_results(store, namespace, search_results)
-
     processed_results = await process_search_results(
         search_results=search_results,
         summarization_model=summarization_model,
         max_content_length=configuration.max_content_length,
     )
 
-    return processed_search_results_to_xml(processed_results)
-
-
-async def _store_results(
-        store: BaseStore,
-        namespace: tuple[str, ...],
-        search_results: list[TavilySearchResult]
-) -> None:
-    try:
-        await asyncio.gather(
-            *[
-                store.aput(
-                    namespace,
-                    result.id,
-                    result.model_dump(mode="json"),
-                    index=False
-                )
-                for result in search_results
-            ]
+    stored_results: list[StoredSearchResult] = []
+    for search_result in search_results:
+        processed_result = processed_results[search_result.id]
+        stored_results.append(
+            StoredSearchResult(
+                id=processed_result.id,
+                url=processed_result.url,
+                title=processed_result.title,
+                raw_content=search_result.raw_content,
+                summary=processed_result.summary,
+                key_excerpts=processed_result.key_excerpts
+            )
         )
-    except Exception:
-        logger.exception("Failed to store search results")
+
+    await store_sources(
+        store,
+        configuration.session_id,
+        stored_results
+    )
+
+    return processed_search_results_to_xml(list(processed_results.values()))
