@@ -51,7 +51,7 @@ This stack changes fast, and the models in `LLMModel` are newer than your traini
 
 - Nodes are `async` functions that return a partial state dict or `Command(goto=..., update=...)`. Routing lives in the nodes, so only fixed edges are declared in the graph builder.
 - State is `TypedDict` or `MessagesState` in `state.py`, with reducers (`operator.add`, `add_messages`) on fan-in fields. Each graph has separate input and output schemas.
-- Structured LLM output uses `FrozenBaseModel` subclasses from `schemas.py`, created through `init_openrouter_structured_model`.
+- Data contracts and structured LLM output schemas are `FrozenBaseModel` subclasses in `schemas.py`; structured models are created through `init_openrouter_structured_model`.
 - Models are the `LLMModel` enum in `configuration.py`. Add new models there and never hardcode model strings. Per-role settings live in `Configuration`.
 - Prompts are `str.format` templates in `prompts/`, one module per workflow. **Escape literal braces as `{{` and `}}`.**
 - Docstrings are Google style (`Args:` / `Returns:`). Keep existing comments and docstrings that are unrelated to your change.
@@ -106,26 +106,29 @@ flowchart TD
     subgraph RESEARCHER["researcher_graph: workflows/research.py, one run per ConductResearch call"]
         R1["conduct_research: researcher_llm_config, bound tool tavily_search"]
         R2["researcher_tools: ToolNode, counts researcher_tool_calls"]
-        R3["compress_research: compression_llm_config"]
+        R3["compress_research: structured DraftResearch, compression_llm_config"]
+        R4["verify_research: structured VerifiedResearch, verifier_llm_config, formats citations"]
         R1 -->|" tool calls and under max_researcher_tool_calls "| R2
         R2 --> R1
         R1 -->|" no tool calls, or limit reached "| R3
+        R3 --> R4
     end
 
     R2 --> T1
 
     subgraph SEARCH["tavily_search pipeline: tools/search.py, search/"]
         T1["search_tavily: Tavily API, dedupe by normalized URL, id is a sha256 prefix"]
-        T2[("Store: sessions / session_id / sources, raw results")]
-        T3["process_search_results: truncate to max_content_length, summarize each page with summarization_llm_config"]
+        T2["_get_or_process_source: per-source lock, reuse stored result or run process_search_result"]
+        T3[("Store: sessions / session_id / sources, ProcessedSearchResult")]
         T4["processed_search_results_to_xml: ToolMessage content"]
-        T1 --> T2
-        T1 --> T3
-        T3 --> T4
+        T1 -->|" parallel via asyncio.gather "| T2
+        T2 <--> T3
+        T2 --> T4
     end
 
     T4 -.->|" tool result "| R2
-    R3 -->|" compressed_research becomes the ConductResearch ToolMessage, raw_notes accumulate "| V1
+    T3 -.->|" get_sources_by_ids "| R4
+    R4 -->|" compressed_research becomes the ConductResearch ToolMessage, raw_notes accumulate "| V1
     V_OUT -->|" notes, research_brief "| F1
 
     subgraph FINAL["workflows/final_report.py"]
@@ -146,6 +149,7 @@ flowchart TD
 | `researcher_llm_config`    | `conduct_research`                                            |
 | `summarization_llm_config` | page summaries inside `tavily_search`                         |
 | `compression_llm_config`   | `compress_research`                                           |
+| `verifier_llm_config`      | `verify_research`                                             |
 | `writer_llm_config`        | `generate_final_report`                                       |
 
 Loop and size limits are `max_planning_iterations`, `max_supervisor_iterations`, `max_researcher_tool_calls`, `max_concurrent_research_threads`, `max_structured_output_retries` and `max_content_length`. Their current values are in `configuration.py`.
@@ -158,7 +162,7 @@ Loop and size limits are `max_planning_iterations`, `max_supervisor_iterations`,
     - `tools/`: LLM-callable tools (`search.py`, `supervisor.py`, `reflection.py`).
     - `search/`: Tavily client and result processing.
     - `memory/`: source storage helpers.
-    - `state.py`, `schemas.py`, `formatting.py` (XML rendering for prompts), `openrouter.py` (model factories), `configuration.py`, `studio.py`.
+    - `state.py`, `schemas.py` (Pydantic contracts and structured output schemas), `formatting.py` (XML rendering for prompts), `openrouter.py` (model factories), `configuration.py`, `utils.py`, `studio.py`.
 - `scripts/`: manual runners (human use only) plus `check.py`.
 - `evals/<suite>/`: LangSmith datasets, targets and evaluators, with data in `data/*.jsonl`. Suites are `brief`, `plan` (both in `scoping`), `research`, `supervisor` and `final_report`. Register new suites in `evals/run.py`.
 - `NOTES.md`: persistent cross-session engineering learning notebook maintained by agents.
@@ -166,8 +170,7 @@ Loop and size limits are `max_planning_iterations`, `max_supervisor_iterations`,
 ## Gotchas
 
 - `Configuration.from_runnable_config` requires `configurable.thread_id`. It also provides `session_id` for the Store namespace and OpenRouter session tagging. Other fields resolve from `configurable` first, then from an env var named after the uppercased field, then from the class default.
-- `tavily_search` raises if `runtime.store` is `None`, so any caller must provide a Store.
-- `search/tavily.py` creates `AsyncTavilyClient()` at import time, which needs `TAVILY_API_KEY` in the environment.
+- `tavily_search` and `verify_research` raise if `store` is `None`, so any caller running `researcher_graph`, `supervisor_graph`, or `deep_research_graph` must provide a `BaseStore` (e.g., `InMemoryStore()`).
 - `max_concurrent_research_threads` is passed to the supervisor prompt but not enforced in code (TODO in `supervisor_tools`).
 - `think_tool` (`tools/reflection.py`) is defined but not currently bound to any agent.
-- Interrupts (`ask_clarification`, `review_plan`) need a checkpointer. `scoping_graph` in `studio.py` is compiled with `checkpointer=None`, which LangGraph Studio replaces at runtime.
+- Interrupts (`ask_clarification`, `review_plan`) need a checkpointer. Graphs in `studio.py` are compiled with `checkpointer=None` (and `store=None`), which LangGraph Studio replaces at runtime.
