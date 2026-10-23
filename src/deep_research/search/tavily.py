@@ -1,27 +1,27 @@
+import os
+from functools import lru_cache
 from hashlib import sha256
 from typing import Literal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from tavily import AsyncTavilyClient
 
-from deep_research.schemas import FrozenBaseModel
+from deep_research.schemas import TavilySearchResult
 
 _TRACKING_PARAM_PREFIXES = ("utm_",)
 _TRACKING_PARAMS = frozenset({"gclid", "fbclid", "msclkid", "igshid", "mc_cid", "mc_eid"})
 _DEFAULT_PORTS = frozenset({80, 443})
 
-client = AsyncTavilyClient()
 
+@lru_cache(maxsize=1)
+def _get_tavily_client() -> AsyncTavilyClient:
+    """Lazily initialize and reuse a single AsyncTavilyClient instance."""
+    
+    api_key = os.getenv("TAVILY_API_KEY")
+    if not api_key:
+        raise ValueError("TAVILY_API_KEY environment variable is not set.")
 
-class TavilySearchResult(FrozenBaseModel):
-    """Schema for a single search result from Tavily API."""
-
-    id: str
-    url: str
-    title: str
-    content: str
-    score: float
-    raw_content: str | None = None
+    return AsyncTavilyClient(api_key=api_key)
 
 
 async def search_tavily(
@@ -43,6 +43,7 @@ async def search_tavily(
         Dictionary of unique search results keyed by URL
     """
 
+    client = _get_tavily_client()
     response = await client.search(
         query=query,
         max_results=max_results,

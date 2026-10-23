@@ -1,7 +1,6 @@
-from collections.abc import Mapping, Sequence
 from xml.etree import ElementTree
 
-from deep_research.schemas import DraftResearch, ResearchPlan, ResearchSection
+from deep_research.schemas import DraftResearch, ResearchPlan
 from deep_research.search.processing import ProcessedSearchResult
 
 
@@ -37,19 +36,19 @@ def research_plan_to_xml(plan: ResearchPlan) -> str:
     return ElementTree.tostring(root, encoding="unicode", short_empty_elements=False)
 
 
-def processed_search_results_to_xml(processed_results: list[ProcessedSearchResult]) -> str:
+def processed_search_results_to_xml(sources: list[ProcessedSearchResult]) -> str:
     """Convert processed search results to XML format."""
 
-    root = ElementTree.Element("search_results")
+    root = ElementTree.Element("sources")
 
-    for result in processed_results:
-        result_element = ElementTree.SubElement(root, "result", attrib={"id": result.id})
-        ElementTree.SubElement(result_element, "url").text = result.url
-        ElementTree.SubElement(result_element, "title").text = result.title
-        ElementTree.SubElement(result_element, "summary").text = result.summary
+    for source in sources:
+        result_element = ElementTree.SubElement(root, "source", attrib={"id": source.id})
+        ElementTree.SubElement(result_element, "url").text = source.url
+        ElementTree.SubElement(result_element, "title").text = source.title
+        ElementTree.SubElement(result_element, "summary").text = source.summary
 
-        if result.key_excerpts is not None:
-            ElementTree.SubElement(result_element, "key_excerpts").text = result.key_excerpts
+        if source.key_excerpts is not None:
+            ElementTree.SubElement(result_element, "key_excerpts").text = source.key_excerpts
 
     ElementTree.indent(root, space="  ")
     return ElementTree.tostring(root, encoding="unicode", short_empty_elements=False)
@@ -75,58 +74,3 @@ def draft_research_to_xml(research: DraftResearch) -> str:
 
     ElementTree.indent(root, space="  ")
     return ElementTree.tostring(root, encoding="unicode", short_empty_elements=False)
-
-
-def format_verified_research(
-        *,
-        queries_and_tool_calls: Sequence[str],
-        sections: Sequence[ResearchSection],
-        sources_by_id: Mapping[str, ProcessedSearchResult]
-) -> str:
-    """Render verified findings with sequential ([1], [2], ...) citations."""
-
-    citation_numbers: dict[str, int] = {}
-    rendered_sections: list[str] = []
-
-    for section in sections:
-        rendered_findings: list[str] = []
-        for finding in section.findings:
-            statement = finding.statement.strip()
-            if not statement:
-                continue
-
-            valid_ids = list(
-                dict.fromkeys(
-                    s_id for s_id in finding.source_ids if s_id in sources_by_id
-                )
-            )
-            if not valid_ids:
-                continue
-
-            for s_id in valid_ids:
-                if s_id not in citation_numbers:
-                    citation_numbers[s_id] = len(citation_numbers) + 1
-
-            markers = "".join(f"[{citation_numbers[s_id]}]" for s_id in valid_ids)
-            rendered_findings.append(f"- {statement} {markers}")
-
-        if rendered_findings:
-            heading = section.heading.strip()
-            rendered_sections.append(
-                f"### {heading}\n" + "\n".join(rendered_findings)
-            )
-
-    queries_block = "\n".join(f"- {q}" for q in queries_and_tool_calls)
-    findings_block = "\n\n".join(rendered_sections)
-    sources_block = "\n".join(
-        f"- [{num}] {sources_by_id[s_id].title}: {sources_by_id[s_id].url}"
-        for s_id, num in citation_numbers.items()
-    )
-
-    parts = [
-        f"## List of Queries and Tool Calls Made\n{queries_block}",
-        f"## Fully Comprehensive Findings\n\n{findings_block}",
-        f"### Sources\n{sources_block}"
-    ]
-
-    return "\n\n".join(parts)

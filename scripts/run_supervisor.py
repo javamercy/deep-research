@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.store.memory import InMemoryStore
 from rich.console import Console
 
 from deep_research.state import SupervisorState
@@ -23,7 +24,10 @@ async def main():
         configurable={"thread_id": uuid4()},
         recursion_limit=50
     )
-    graph = build_supervisor_graph(checkpointer=InMemorySaver())
+    graph = build_supervisor_graph(
+        checkpointer=InMemorySaver(),
+        store=InMemoryStore(),
+    )
 
     messages = [HumanMessage(content=research_brief)]
 

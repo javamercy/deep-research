@@ -5,21 +5,10 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import Runnable
 
 from deep_research.prompts.research import SUMMARIZE_WEBPAGE_SYSTEM_PROMPT, SUMMARIZE_WEBPAGE_USER_PROMPT
-from deep_research.schemas import ContentSummary, FrozenBaseModel
-from deep_research.search.tavily import TavilySearchResult
+from deep_research.schemas import ContentSummary, ProcessedSearchResult, TavilySearchResult
 from deep_research.utils import get_today_str
 
 logger = logging.getLogger(__name__)
-
-
-class ProcessedSearchResult(FrozenBaseModel):
-    """Schema for processed search result with summary and key excerpts."""
-
-    id: str
-    url: str
-    title: str
-    summary: str
-    key_excerpts: str | None = None
 
 
 async def process_search_results(
@@ -27,7 +16,7 @@ async def process_search_results(
         *,
         summarization_model: Runnable[LanguageModelInput, ContentSummary],
         max_content_length: int = 20_000
-) -> dict[str, ProcessedSearchResult]:
+) -> list[ProcessedSearchResult]:
     """Process search results by summarizing content where available.
 
     Args:
@@ -39,7 +28,7 @@ async def process_search_results(
         Dictionary of ProcessedSearchResult objects keyed by result ID
     """
 
-    processed_results: dict[str, ProcessedSearchResult] = {}
+    processed_results: list[ProcessedSearchResult] = []
 
     for result in search_results:
         summary = ""
@@ -61,12 +50,14 @@ async def process_search_results(
         else:
             summary = result.content
 
-        processed_results[result.id] = ProcessedSearchResult(
-            id=result.id,
-            title=result.title,
-            url=result.url,
-            summary=summary,
-            key_excerpts=key_excerpts
+        processed_results.append(
+            ProcessedSearchResult(
+                id=result.id,
+                title=result.title,
+                url=result.url,
+                summary=summary,
+                key_excerpts=key_excerpts
+            )
         )
 
     return processed_results

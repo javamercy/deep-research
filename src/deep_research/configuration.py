@@ -77,6 +77,11 @@ class Configuration(FrozenBaseModel):
         reasoning_effort="high",
         max_output_tokens=32_000,
     )
+    verifier_llm_config: LLMModelConfig = LLMModelConfig(
+        model=LLMModel.DEEPSEEK_V4_FLASH,
+        reasoning_effort="high",
+        max_output_tokens=32_000,
+    )
     supervisor_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
         max_output_tokens=16_000,

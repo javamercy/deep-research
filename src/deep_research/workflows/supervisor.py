@@ -7,6 +7,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_core.runnables import RunnableConfig
 from langgraph.constants import START
 from langgraph.graph import StateGraph
+from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer, Command
 
 from deep_research.configuration import Configuration
@@ -277,7 +278,7 @@ def _collect_tool_calls_from_supervisor_message(
     return update_plan_calls, conduct_research_calls
 
 
-def build_supervisor_graph(checkpointer: Checkpointer):
+def build_supervisor_graph(checkpointer: Checkpointer, store: BaseStore | None = None):
     """Builds the supervisor graph with the given checkpointer.
 
     Args:
@@ -301,4 +302,4 @@ def build_supervisor_graph(checkpointer: Checkpointer):
 
     builder.add_edge(START, "supervisor")
 
-    return builder.compile(checkpointer=checkpointer)
+    return builder.compile(checkpointer=checkpointer, store=store)

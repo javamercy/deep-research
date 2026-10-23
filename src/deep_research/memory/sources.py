@@ -2,20 +2,11 @@ import asyncio
 import logging
 from collections.abc import Iterable, Sequence
 
-from langgraph.store.base import BaseStore, Item
+from langgraph.store.base import BaseStore
 
-from deep_research.schemas import FrozenBaseModel
+from deep_research.schemas import ProcessedSearchResult
 
 logger = logging.getLogger(__name__)
-
-
-class StoredSearchResult(FrozenBaseModel):
-    id: str
-    url: str
-    title: str
-    raw_content: str | None = None
-    summary: str
-    key_excerpts: str | None = None
 
 
 def sources_namespace(session_id: str) -> tuple[str, str, str]:
@@ -24,8 +15,9 @@ def sources_namespace(session_id: str) -> tuple[str, str, str]:
 
 async def store_sources(
         store: BaseStore,
+        *,
         session_id: str,
-        sources: Sequence[StoredSearchResult]
+        sources: Sequence[ProcessedSearchResult]
 ) -> None:
     if not sources:
         return
@@ -44,17 +36,32 @@ async def store_sources(
     )
 
 
+async def get_source_by_id(
+        store: BaseStore,
+        *,
+        session_id: str,
+        source_id: str
+) -> ProcessedSearchResult | None:
+    namespace = sources_namespace(session_id)
+    item = await store.aget(namespace, source_id)
+    if item is None:
+        return None
+
+    return ProcessedSearchResult.model_validate(item.value)
+
+
 async def get_sources_by_ids(
         store: BaseStore,
+        *,
         session_id: str,
         source_ids: Iterable[str]
-) -> dict[str, StoredSearchResult]:
-    unique_ids = list(set(source_ids))
+) -> dict[str, ProcessedSearchResult]:
+    unique_ids = list(dict.fromkeys(source_ids))
     if not unique_ids:
         return {}
 
     namespace = sources_namespace(session_id)
-    items: list[Item | None] = await asyncio.gather(
+    items = await asyncio.gather(
         *(
             store.aget(namespace, source_id)
             for source_id in unique_ids
@@ -64,7 +71,7 @@ async def get_sources_by_ids(
     sources_by_ids = {}
     for item in items:
         if item is not None:
-            source = StoredSearchResult.model_validate(item.value)
+            source = ProcessedSearchResult.model_validate(item.value)
             sources_by_ids[source.id] = source
 
     return sources_by_ids

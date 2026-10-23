@@ -2,12 +2,19 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# =============================================================================
+# Base
+# =============================================================================
 
 class FrozenBaseModel(BaseModel):
     """Base model with frozen configuration."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+
+# =============================================================================
+# Scoping
+# =============================================================================
 
 class ClarificationDecision(FrozenBaseModel):
     """Decision about whether research requires user clarification."""
@@ -43,14 +50,7 @@ class ResearchQuestion(FrozenBaseModel):
     )
 
 
-class ContentSummary(FrozenBaseModel):
-    """Schema for webpage content summarization."""
-
-    summary: str = Field(description="Concise summary of the webpage content")
-    key_excerpts: str = Field(description="Important quotes and excerpts from the content")
-
-
-class ResearchTask(BaseModel):
+class ResearchTask(FrozenBaseModel):
     """Schema for structured research task generation."""
 
     id: str = Field(
@@ -91,6 +91,43 @@ class ResearchPlanReview(FrozenBaseModel):
     )
 
 
+# =============================================================================
+# Search and Sources
+# =============================================================================
+
+class ContentSummary(FrozenBaseModel):
+    """Schema for webpage content summarization."""
+
+    summary: str = Field(description="Concise summary of the webpage content")
+    key_excerpts: str = Field(description="Important quotes and excerpts from the content")
+
+
+class TavilySearchResult(FrozenBaseModel):
+    """Schema for a single search result from Tavily API."""
+
+    id: str
+    url: str
+    title: str
+    content: str
+    score: float
+    raw_content: str | None = None
+
+
+class ProcessedSearchResult(FrozenBaseModel):
+    """Schema for processed search result with summary and key excerpts."""
+
+    id: str
+    url: str
+    title: str
+    summary: str
+    key_excerpts: str | None = None
+
+
+# =============================================================================
+# Research
+# =============================================================================
+
+
 class ResearchFinding(FrozenBaseModel):
     """Schema for single factual research finding attributed to source IDs."""
 
@@ -104,7 +141,7 @@ class ResearchFinding(FrozenBaseModel):
     )
 
     source_ids: list[str] = Field(
-        description="List of 8-character source IDs (from <result id='...'>) that directly substantiate this statement."
+        description="List of 8-character source IDs (from <source id='...'>) that directly substantiate this statement."
     )
 
 

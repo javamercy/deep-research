@@ -1,4 +1,7 @@
+import logging
+from collections.abc import Mapping, Sequence
 from typing import Literal
+from xml.etree import ElementTree
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage, filter_messages
 from langchain_core.runnables import RunnableConfig
@@ -10,12 +13,16 @@ from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer, Command
 
 from deep_research.configuration import Configuration
+from deep_research.formatting import draft_research_to_xml, processed_search_results_to_xml
+from deep_research.memory.sources import get_sources_by_ids
 from deep_research.openrouter import init_openrouter_model, init_openrouter_structured_model
-from deep_research.prompts.research import COMPRESS_SYSTEM_PROMPT, COMPRESS_USER_PROMPT, RESEARCHER_SYSTEM_PROMPT
-from deep_research.schemas import DraftResearch
+from deep_research.prompts.research import COMPRESS_SYSTEM_PROMPT, COMPRESS_USER_PROMPT, RESEARCHER_SYSTEM_PROMPT, VERIFY_RESEARCH_SYSTEM_PROMPT, VERIFY_RESEARCH_USER_PROMPT
+from deep_research.schemas import DraftResearch, ProcessedSearchResult, ResearchSection, VerifiedResearch
 from deep_research.state import ResearcherInputState, ResearcherOutputState, ResearcherState
 from deep_research.tools.search import tavily_search
 from deep_research.utils import get_today_str
+
+logger = logging.getLogger(__name__)
 
 
 async def conduct_research(
@@ -161,7 +168,148 @@ async def verify_research(
         *,
         store: BaseStore
 ) -> dict:
-    raise NotImplementedError("Research verification is not implemented yet.")
+    if store is None:
+        raise ValueError("Runtime store is not available.")
+
+    configuration = Configuration.from_runnable_config(config=config)
+    draft_research = state["draft_research"]
+
+    tool_messages = [
+        tool_message.text
+        for tool_message in filter_messages(
+            state["researcher_messages"],
+            include_names=["tavily_search"],
+            include_types=[ToolMessage]
+        )
+    ]
+    tool_source_ids = _extract_source_ids_from_tool_messages(tool_messages)
+
+    draft_source_ids = [
+        s_id
+        for section in draft_research.sections
+        for finding in section.findings
+        for s_id in finding.source_ids
+    ]
+
+    sources_by_id = await get_sources_by_ids(
+        store,
+        session_id=configuration.session_id,
+        source_ids=[*tool_source_ids, *draft_source_ids]
+    )
+
+    if draft_research.sections and sources_by_id:
+        verifier_model = init_openrouter_structured_model(
+            configuration.verifier_llm_config,
+            session_id=configuration.session_id,
+            output_schema=VerifiedResearch,
+            max_retries=configuration.max_structured_output_retries
+        )
+
+        messages = [
+            SystemMessage(content=VERIFY_RESEARCH_SYSTEM_PROMPT.format(
+                date=get_today_str()
+            )),
+            HumanMessage(content=VERIFY_RESEARCH_USER_PROMPT.format(
+                research_topic=state["research_topic"],
+                draft_research=draft_research_to_xml(
+                    draft_research
+                ),
+                sources=processed_search_results_to_xml(
+                    list(sources_by_id.values())
+                )
+            ))
+        ]
+        verified_research = await verifier_model.ainvoke(messages)
+        verified_sections = verified_research.sections
+    else:
+        verified_sections = []
+
+    compressed_research = _format_verified_research(
+        queries_and_tool_calls=draft_research.queries_and_tool_calls,
+        sections=verified_sections,
+        sources_by_id=sources_by_id
+    )
+
+    return {
+        "compressed_research": compressed_research
+    }
+
+
+def _extract_source_ids_from_tool_messages(
+        messages: Sequence[str]
+) -> list[str]:
+    source_ids = []
+    for message in messages:
+        try:
+            root = ElementTree.fromstring(message)
+
+            source_ids.extend(
+                [
+                    source_id
+                    for result in root.findall("source")
+                    if (source_id := result.attrib.get("id"))
+                ]
+            )
+
+        except ElementTree.ParseError as e:
+            logger.exception(f"Error while parsing message: {e}")
+
+    return source_ids
+
+
+def _format_verified_research(
+        *,
+        queries_and_tool_calls: Sequence[str],
+        sections: Sequence[ResearchSection],
+        sources_by_id: Mapping[str, ProcessedSearchResult]
+) -> str:
+    """Render verified findings with sequential ([1], [2], ...) citations."""
+
+    citation_numbers: dict[str, int] = {}
+    rendered_sections: list[str] = []
+
+    for section in sections:
+        rendered_findings: list[str] = []
+        for finding in section.findings:
+            statement = finding.statement.strip()
+            if not statement:
+                continue
+
+            valid_ids = list(
+                dict.fromkeys(
+                    s_id for s_id in finding.source_ids if s_id in sources_by_id
+                )
+            )
+            if not valid_ids:
+                continue
+
+            for s_id in valid_ids:
+                if s_id not in citation_numbers:
+                    citation_numbers[s_id] = len(citation_numbers) + 1
+
+            markers = "".join(f"[{citation_numbers[s_id]}]" for s_id in valid_ids)
+            rendered_findings.append(f"- {statement} {markers}")
+
+        if rendered_findings:
+            heading = section.heading.strip()
+            rendered_sections.append(
+                f"### {heading}\n" + "\n".join(rendered_findings)
+            )
+
+    queries_block = "\n".join(f"- {q}" for q in queries_and_tool_calls)
+    findings_block = "\n\n".join(rendered_sections)
+    sources_block = "\n".join(
+        f"- [{num}] {sources_by_id[s_id].title}: {sources_by_id[s_id].url}"
+        for s_id, num in citation_numbers.items()
+    )
+
+    parts = [
+        f"## List of Queries and Tool Calls Made\n{queries_block}",
+        f"## Fully Comprehensive Findings\n\n{findings_block}",
+        f"### Sources\n{sources_block}"
+    ]
+
+    return "\n\n".join(parts)
 
 
 def build_researcher_graph(checkpointer: Checkpointer, store: BaseStore | None = None):
@@ -215,9 +363,11 @@ def build_researcher_graph(checkpointer: Checkpointer, store: BaseStore | None =
     builder.add_node("conduct_research", conduct_research_node)
     builder.add_node("researcher_tools", researcher_tools_node)
     builder.add_node("compress_research", compress_research)
+    builder.add_node("verify_research", verify_research)
 
     builder.add_edge(START, "conduct_research")
     builder.add_edge("researcher_tools", "conduct_research")
-    builder.add_edge("compress_research", END)
+    builder.add_edge("compress_research", "verify_research")
+    builder.add_edge("verify_research", END)
 
     return builder.compile(checkpointer=checkpointer, store=store)
