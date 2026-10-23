@@ -289,7 +289,7 @@ def _format_verified_research(
         sections: Sequence[ResearchSection],
         sources_by_id: Mapping[str, ProcessedSearchResult]
 ) -> str:
-    """Render verified findings into markdown with sequential ([1], [2], ...) citations.
+    """Render verified findings into markdown with source ID citations.
 
     Args:
         queries_and_tool_calls: Search queries executed during the research session.
@@ -297,11 +297,11 @@ def _format_verified_research(
         sources_by_id: Mapping of valid source IDs to their ProcessedSearchResult metadata.
 
     Returns:
-        Formatted markdown string containing queries, cited findings, and a numbered Sources list.
+        Formatted markdown string containing queries, cited findings, and a Sources list.
     """
 
-    citation_numbers: dict[str, int] = {}
     rendered_sections: list[str] = []
+    cited_source_ids: dict[str, None] = {}
 
     for section in sections:
         rendered_findings: list[str] = []
@@ -312,18 +312,21 @@ def _format_verified_research(
 
             valid_ids = list(
                 dict.fromkeys(
-                    s_id for s_id in finding.source_ids if s_id in sources_by_id
+                    s_id for s_id in finding.source_ids
+                    if s_id in sources_by_id
                 )
             )
             if not valid_ids:
                 continue
 
+            markers: list[str] = []
             for s_id in valid_ids:
-                if s_id not in citation_numbers:
-                    citation_numbers[s_id] = len(citation_numbers) + 1
+                if s_id not in cited_source_ids:
+                    cited_source_ids[s_id] = None
 
-            markers = "".join(f"[{citation_numbers[s_id]}]" for s_id in valid_ids)
-            rendered_findings.append(f"- {statement} {markers}")
+                markers.append(f"[{s_id}]")
+
+            rendered_findings.append(f"- {statement} {"".join(markers)}")
 
         if rendered_findings:
             heading = section.heading.strip()
@@ -334,8 +337,8 @@ def _format_verified_research(
     queries_block = "\n".join(f"- {q}" for q in queries_and_tool_calls)
     findings_block = "\n\n".join(rendered_sections)
     sources_block = "\n".join(
-        f"- [{num}] {sources_by_id[s_id].title}: {sources_by_id[s_id].url}"
-        for s_id, num in citation_numbers.items()
+        f"- [{s_id}] {sources_by_id[s_id].title}: {sources_by_id[s_id].url}"
+        for s_id in cited_source_ids
     )
 
     parts = [
