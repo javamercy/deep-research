@@ -103,7 +103,8 @@ class ResearcherState(TypedDict):
         researcher_messages (Sequence[BaseMessage]): Messages exchanged with the research agent.
         research_topic (str): The research topic being investigated.
         researcher_tool_calls (int): Counter tracking the number of tool calls made by the researcher.
-        compressed_research (str): Compressed summary of the research findings.
+        draft_research (DraftResearch): Structured draft research findings before verification.
+        compressed_research (str): Verified and citation-formatted markdown summary of research findings.
         raw_notes (list[str]): Raw unprocessed notes collected during research for detailed analysis.
     """
 
@@ -131,7 +132,7 @@ class SupervisorInputState(TypedDict):
     """Input state for the multi-agent research supervisor.
 
     Attributes:
-        supervisor_messages (Sequence[BaseMessage]): Messages exchanged with the supervisor for coordination and decision-making
+        research_plan (ResearchPlan): The structured research plan to execute.
     """
 
     research_plan: ResearchPlan

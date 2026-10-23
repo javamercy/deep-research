@@ -43,6 +43,7 @@ class Configuration(FrozenBaseModel):
         researcher_llm_config (LLMModelConfig): Configuration for the researcher LLM model.
         summarization_llm_config (LLMModelConfig): Configuration for the summarization LLM model.
         compression_llm_config (LLMModelConfig): Configuration for the compression LLM model.
+        verifier_llm_config (LLMModelConfig): Configuration for the verifier LLM model.
         supervisor_llm_config (LLMModelConfig): Configuration for the supervisor LLM model.
         writer_llm_config (LLMModelConfig): Configuration for the writer LLM model.
     """
