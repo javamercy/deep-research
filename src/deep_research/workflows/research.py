@@ -23,7 +23,14 @@ from deep_research.prompts.research import (
     VERIFY_RESEARCH_SYSTEM_PROMPT,
     VERIFY_RESEARCH_USER_PROMPT,
 )
-from deep_research.schemas import DraftResearch, ProcessedSearchResult, ResearchSection, VerifiedResearch
+from deep_research.schemas import (
+    DraftResearch,
+    ProcessedSearchResult,
+    ResearchFinding,
+    ResearchFindingUpdate,
+    ResearchSection,
+    VerifiedResearch,
+)
 from deep_research.state import ResearcherInputState, ResearcherOutputState, ResearcherState
 from deep_research.tools.search import tavily_search
 from deep_research.utils import get_today_str
@@ -150,7 +157,9 @@ async def compress_research(
             content=COMPRESS_USER_PROMPT.format(research_topic=state["research_topic"])
         ),
     ]
-    draft_research = await compress_model.ainvoke(messages)
+    draft_research = _assign_finding_ids(
+        await compress_model.ainvoke(messages)
+    )
 
     # TODO: Consider using a more structured approach to extract raw notes,
     #  separating them by message type or source for better clarity and analysis.
@@ -214,6 +223,7 @@ async def verify_research(
         source_ids=[*tool_source_ids, *draft_source_ids]
     )
 
+    verified_sections: list[ResearchSection] = []
     if draft_research.sections and sources_by_id:
         verifier_model = init_openrouter_structured_model(
             configuration.verifier_llm_config,
@@ -227,7 +237,6 @@ async def verify_research(
                 date=get_today_str()
             )),
             HumanMessage(content=VERIFY_RESEARCH_USER_PROMPT.format(
-                research_topic=state["research_topic"],
                 draft_research=draft_research_to_xml(
                     draft_research
                 ),
@@ -236,10 +245,12 @@ async def verify_research(
                 )
             ))
         ]
+
         verified_research = await verifier_model.ainvoke(messages)
-        verified_sections = verified_research.sections
-    else:
-        verified_sections = []
+        verified_sections = _apply_finding_updates(
+            draft_research,
+            verified_research.updates
+        )
 
     compressed_research = _format_verified_research(
         queries_and_tool_calls=draft_research.queries_and_tool_calls,
@@ -250,6 +261,99 @@ async def verify_research(
     return {
         "compressed_research": compressed_research
     }
+
+
+def _assign_finding_ids(draft_research: DraftResearch) -> DraftResearch:
+    """Assign deterministic '<section_idx>.<finding_idx>' IDs to all findings in DraftResearch.
+
+    Args:
+        draft_research: The compressed DraftResearch report with unassigned finding IDs.
+
+    Returns:
+        Updated DraftResearch with populated finding IDs.
+    """
+
+    return draft_research.model_copy(
+        update={
+            "sections": [
+                section.model_copy(
+                    update={
+                        "findings": [
+                            finding.model_copy(update={"id": f"{sec_idx}.{find_idx}"})
+                            for find_idx, finding in enumerate(section.findings, start=1)
+                        ]
+                    }
+                )
+                for sec_idx, section in enumerate(draft_research.sections, start=1)
+            ]
+        }
+    )
+
+
+def _apply_finding_updates(
+        draft_research: DraftResearch,
+        finding_updates: Sequence[ResearchFindingUpdate],
+) -> list[ResearchSection]:
+    """Apply verification updates and removals to draft research sections.
+
+    Args:
+        draft_research: The DraftResearch containing sections and ID-tagged findings.
+        finding_updates: Sequence of update or removal operations produced by the verifier.
+
+    Returns:
+        List of verified ResearchSection objects with empty sections omitted.
+    """
+
+    updates_by_id = {update.finding_id: update for update in finding_updates}
+    known_ids = {
+        finding.id
+        for section in draft_research.sections
+        for finding in section.findings
+    }
+    unknown_ids = updates_by_id.keys() - known_ids
+
+    if unknown_ids:
+        logger.warning(
+            "VerifiedResearch referenced unknown finding ids: %s",
+            sorted(unknown_ids),
+        )
+
+    verified_sections: list[ResearchSection] = []
+    for section in draft_research.sections:
+
+        verified_findings: list[ResearchFinding] = []
+        for finding in section.findings:
+            update = updates_by_id.get(finding.id)
+            if update is None:
+                verified_findings.append(finding)
+                continue
+
+            if update.action == "remove":
+                continue
+
+            verified_findings.append(
+                finding.model_copy(
+                    update={
+                        "statement": (
+                            update.statement
+                            if update.statement is not None
+                            else finding.statement
+                        ),
+                        "source_ids": (
+                            update.source_ids
+                            if update.source_ids is not None
+                            else finding.source_ids
+                        ),
+                    }
+                )
+            )
+
+        if verified_findings:
+            verified_sections.append(
+                section.model_copy(update={"findings": verified_findings})
+            )
+
+    return verified_sections
 
 
 def _extract_source_ids_from_tool_messages(

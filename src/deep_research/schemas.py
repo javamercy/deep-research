@@ -1,6 +1,7 @@
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic.json_schema import SkipJsonSchema
 
 # =============================================================================
 # Base
@@ -131,6 +132,10 @@ class ProcessedSearchResult(FrozenBaseModel):
 class ResearchFinding(FrozenBaseModel):
     """Schema for single factual research finding attributed to source IDs."""
 
+    id: SkipJsonSchema[str] = Field(
+        default="",
+        description="Unique identifier for the research finding, assigned automatically after compression.",
+    )
     statement: str = Field(
         description=(
             "A comprehensive factual statement or finding, preserving exact numbers, "
@@ -139,7 +144,6 @@ class ResearchFinding(FrozenBaseModel):
             "citations are attached automatically from source_ids."
         )
     )
-
     source_ids: list[str] = Field(
         description="List of 8-character source IDs (from <source id='...'>) that directly substantiate this statement."
     )
@@ -167,9 +171,35 @@ class DraftResearch(FrozenBaseModel):
     )
 
 
-class VerifiedResearch(FrozenBaseModel):
-    """Schema for verified and source-validated research findings."""
+class ResearchFindingUpdate(FrozenBaseModel):
+    """Update applied to a single research finding in DraftResearch."""
 
-    sections: list[ResearchSection] = Field(
-        description="Verified thematic sections containing only source-substantiated findings with validated source IDs."
+    finding_id: str = Field(
+        description="The exact 'id' attribute of the <finding id='...'> in <draft_research> to update or remove."
+    )
+    action: Literal["update", "remove"] = Field(
+        description=(
+            "Set to 'update' to modify the research finding's statement and/or source_ids. "
+            "Set to 'remove' if the finding is not substantiated by any source in <sources>."
+        )
+    )
+    statement: str | None = Field(
+        description=(
+            "Updated factual statement if a detail needed correction. "
+            "Set to null if keeping the original statement unchanged, or if action is 'remove'."
+        )
+    )
+    source_ids: list[str] | None = Field(
+        description=(
+            "Updated list of 8-character hex source IDs if citations needed correction. "
+            "Set to null if keeping the original source_ids unchanged, or if action is 'remove'."
+        )
+    )
+
+
+class VerifiedResearch(FrozenBaseModel):
+    """Schema for updates produced by auditing DraftResearch against stored sources."""
+
+    updates: list[ResearchFindingUpdate] = Field(
+        description="List of finding updates or removals. Leave empty if all findings in <draft_research> are already accurate and properly attributed."
     )

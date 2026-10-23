@@ -80,7 +80,7 @@ def draft_research_to_xml(research: DraftResearch) -> str:
         findings_element = ElementTree.SubElement(section_element, "findings")
         for finding in section.findings:
 
-            finding_element = ElementTree.SubElement(findings_element, "finding")
+            finding_element = ElementTree.SubElement(findings_element, "finding", attrib={"id": finding.id})
             ElementTree.SubElement(finding_element, "statement").text = finding.statement
 
             source_ids_element = ElementTree.SubElement(finding_element, "source_ids")
