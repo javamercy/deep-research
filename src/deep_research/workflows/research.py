@@ -137,7 +137,7 @@ async def compress_research(
         config (RunnableConfig): The configuration for the runnable, including model settings.
 
     Returns:
-        Partial state update containing the structured draft_research and raw_notes.
+        Partial state update containing the structured draft_research.
     """
 
     configuration = Configuration.from_runnable_config(config)
@@ -161,19 +161,8 @@ async def compress_research(
         await compress_model.ainvoke(messages)
     )
 
-    # TODO: Consider using a more structured approach to extract raw notes,
-    #  separating them by message type or source for better clarity and analysis.
-    raw_notes = [
-        message.text for message in filter_messages(
-            state["researcher_messages"],
-            include_types=[ToolMessage, AIMessage]
-        )
-    ]
-
     return {
         "draft_research": draft_research,
-        # TODO: See todo above.
-        "raw_notes": ["\n".join(raw_notes)]
     }
 
 

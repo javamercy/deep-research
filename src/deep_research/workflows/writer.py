@@ -8,7 +8,7 @@ from deep_research.state import AgentState
 from deep_research.utils import get_today_str
 
 
-async def generate_final_report(
+async def writer(
         state: AgentState,
         config: RunnableConfig
 ) -> dict:
@@ -30,8 +30,8 @@ async def generate_final_report(
         session_id=configuration.session_id
     )
 
-    notes = state["notes"]
-    findings = "\n".join(notes)
+    compressed_researches = state["compressed_researches"]
+    findings = "\n\n".join(compressed_researches)
 
     messages = [
         SystemMessage(

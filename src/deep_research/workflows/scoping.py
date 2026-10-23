@@ -173,17 +173,16 @@ async def create_plan(
     research_plan = state.get("research_plan")
     if research_plan:
         messages.append(
-            HumanMessage(
-                content=f"{research_plan_to_xml(research_plan)}\n\n"
-                        f"<user_feedback>\n{state["plan_feedback"]}\n</user_feedback>"
-            )
+            HumanMessage(content=(
+                f"{research_plan_to_xml(research_plan)}\n\n"
+                f"<user_feedback>\n{state["plan_feedback"]}\n</user_feedback>"
+            ))
         )
 
     research_plan = await planning_model.ainvoke(messages, config=config)
 
-    goto = "review_plan" if configuration.allow_collaborative_planning else "__end__"
     return Command(
-        goto=goto,
+        goto="review_plan" if configuration.allow_collaborative_planning else "__end__",
         update={
             "research_plan": research_plan,
             "planning_iterations": state.get("planning_iterations", 0) + 1
@@ -213,9 +212,9 @@ def review_plan(
         response_schema=ResearchPlanReview
     )
 
-    should_end = False
     configuration = Configuration.from_runnable_config(config)
 
+    should_end = False
     if response.approved:
         should_end = True
     elif state.get("planning_iterations", 0) >= configuration.max_planning_iterations:

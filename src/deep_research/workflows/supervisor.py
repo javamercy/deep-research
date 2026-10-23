@@ -3,7 +3,8 @@ import logging
 from collections.abc import Sequence
 from typing import Literal, cast
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolCall, ToolMessage, filter_messages
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolCall, ToolMessage, \
+    filter_messages
 from langchain_core.runnables import RunnableConfig
 from langgraph.constants import START
 from langgraph.graph import StateGraph
@@ -23,32 +24,6 @@ from deep_research.workflows.research import build_researcher_graph
 logger = logging.getLogger(__name__)
 
 TOOLS = [ConductResearch, UpdateResearchPlan, ResearchComplete]
-
-
-def get_notes_from_tool_calls(messages: Sequence[BaseMessage]) -> list[str]:
-    """Extract research notes from ToolMessage objects in supervisor message history.
-
-    This function retrieves the compressed research findings that sub-agents
-    return as ToolMessage content. When the supervisor delegates research to
-    sub-agents via ConductResearch tool calls, each sub-agent returns its
-    compressed findings as the content of a ToolMessage. This function
-    extracts all such ToolMessage content to compile the final research notes.
-
-    Args:
-        messages: List of messages from supervisor's conversation history
-
-    Returns:
-        List of research note strings extracted from ToolMessage objects
-    """
-
-    return [
-        str(tool_message.content)
-        for tool_message in filter_messages(
-            messages,
-            include_names=["ConductResearch"],
-            include_types=[ToolMessage]
-        )
-    ]
 
 
 async def supervisor(
@@ -77,7 +52,7 @@ async def supervisor(
         return Command(
             goto="__end__",
             update={
-                "notes": get_notes_from_tool_calls(
+                "compressed_researches": _extract_researches_from_supervisor_messages(
                     state.get("supervisor_messages", [])
                 ),
             },
@@ -101,7 +76,7 @@ async def supervisor(
         ),
         HumanMessage(
             content=SUPERVISOR_USER_PROMPT.format(
-                research_plan=research_plan_to_xml(state["research_plan"])
+                research_plan=research_plan_to_xml(state["research_plan"]),
             )
         ),
         *state.get("supervisor_messages", [])
@@ -142,45 +117,37 @@ async def supervisor_tools(
 
     supervisor_messages = state["supervisor_messages"]
     last_message = cast(AIMessage, supervisor_messages[-1])
+
     tool_calls = last_message.tool_calls
-
-    research_plan = state["research_plan"]
-    tool_messages: list[ToolMessage] = []
-    all_raw_notes: list[str] = []
-
-    next_step = "supervisor"
-    should_end = False
-
     research_complete = any(
         call["name"] == "ResearchComplete"
         for call in tool_calls
     )
 
+    tool_messages: list[ToolMessage] = []
+
     try:
         update_plan_calls, conduct_research_calls = (
-            _collect_tool_calls_from_supervisor_message(tool_calls)
+            _extract_tool_calls_from_supervisor_message(tool_calls)
         )
 
         all_updates: list[UpdateResearchTask] = []
         for tool_call in update_plan_calls:
             all_updates.extend(
-                UpdateResearchTask.model_validate(raw) for raw in tool_call["args"]["tasks"]
+                UpdateResearchTask.model_validate(raw)
+                for raw in tool_call["args"]["tasks"]
             )
             tool_messages.append(
                 ToolMessage(
                     content=f"Updated {len(tool_call['args']['tasks'])} tasks in research plan",
-                    name=tool_call["name"],
+                    name=tool_call["name"],  # UpdateResearchPlan
                     tool_call_id=tool_call["id"]
                 )
             )
 
-        research_plan = _apply_task_updates(research_plan, all_updates)
+        research_plan = _apply_task_updates(state["research_plan"], all_updates)
 
-        if research_complete:
-            should_end = True
-            next_step = "__end__"
-
-        elif conduct_research_calls:
+        if not research_complete and conduct_research_calls:
             researcher_agent = build_researcher_graph(checkpointer=None)
 
             threads = []
@@ -198,43 +165,37 @@ async def supervisor_tools(
                 threads.append(thread)
 
             # TODO: Max concurrent research threads should be enforced here.
-            tool_results = await asyncio.gather(*threads)
+            researcher_outputs = await asyncio.gather(*threads)
 
-            research_tool_messages = [
+            researcher_tool_messages = [
                 ToolMessage(
-                    content=result.get("compressed_research", "Error occurred in research agent"),
-                    name=tool_call["name"],
+                    content=output.get("compressed_research", "Error occurred in researcher agent"),
+                    name=tool_call["name"],  # ConductResearch
                     tool_call_id=tool_call["id"]
                 )
-                for result, tool_call in zip(tool_results, conduct_research_calls, strict=True)
+                for output, tool_call in zip(researcher_outputs, conduct_research_calls, strict=True)
             ]
 
-            tool_messages.extend(research_tool_messages)
-
-            all_raw_notes = [
-                "\n".join(result.get("raw_notes", []))
-                for result in tool_results
-            ]
+            tool_messages.extend(researcher_tool_messages)
 
     except Exception:
         logger.error("Error during supervisor tool execution")
         raise
 
-    if should_end:
+    if research_complete:
         return Command(
-            goto=next_step,
+            goto="__end__",
             update={
-                "notes": get_notes_from_tool_calls(supervisor_messages),
-                "raw_notes": all_raw_notes,
+                "compressed_researches": _extract_researches_from_supervisor_messages(supervisor_messages),
+                "research_plan": research_plan,
             }
         )
 
     return Command(
-        goto=next_step,
+        goto="supervisor",
         update={
             "research_plan": research_plan,
             "supervisor_messages": tool_messages,
-            "raw_notes": all_raw_notes,
         }
     )
 
@@ -262,7 +223,7 @@ def _apply_task_updates(
     )
 
 
-def _collect_tool_calls_from_supervisor_message(
+def _extract_tool_calls_from_supervisor_message(
         tool_calls: list[ToolCall]
 ) -> tuple[list[ToolCall], list[ToolCall]]:
     update_plan_calls = [
@@ -276,6 +237,32 @@ def _collect_tool_calls_from_supervisor_message(
     ]
 
     return update_plan_calls, conduct_research_calls
+
+
+def _extract_researches_from_supervisor_messages(messages: Sequence[BaseMessage]) -> list[str]:
+    """Extract compressed_research notes from ToolMessage objects in supervisor message history.
+
+    This function retrieves the compressed research findings that sub-agents
+    return as ToolMessage content. When the supervisor delegates research to
+    sub-agents via ConductResearch tool calls, each sub-agent returns its
+    compressed findings as the content of a ToolMessage. This function
+    extracts all such ToolMessage content to compile the final research notes.
+
+    Args:
+        messages: List of messages from supervisor's conversation history
+
+    Returns:
+        List of research note strings extracted from ToolMessage objects
+    """
+
+    return [
+        tool_message.text
+        for tool_message in filter_messages(
+            messages,
+            include_names=["ConductResearch"],
+            include_types=[ToolMessage]
+        )
+    ]
 
 
 def build_supervisor_graph(checkpointer: Checkpointer, store: BaseStore | None = None):
