@@ -1,7 +1,6 @@
 from xml.etree import ElementTree
 
-from deep_research.schemas import DraftResearch, ResearchPlan
-from deep_research.search.processing import ProcessedSearchResult
+from deep_research.schemas import DraftResearch, ProcessedSearchResult, ResearchPlan
 
 
 def research_plan_to_xml(plan: ResearchPlan) -> str:
@@ -37,7 +36,14 @@ def research_plan_to_xml(plan: ResearchPlan) -> str:
 
 
 def processed_search_results_to_xml(sources: list[ProcessedSearchResult]) -> str:
-    """Convert processed search results to XML format."""
+    """Convert processed search results to an XML `<sources>` string.
+
+    Args:
+        sources: List of ProcessedSearchResult objects to serialize.
+
+    Returns:
+        The XML string representation of the sources.
+    """
 
     root = ElementTree.Element("sources")
 
@@ -55,6 +61,15 @@ def processed_search_results_to_xml(sources: list[ProcessedSearchResult]) -> str
 
 
 def draft_research_to_xml(research: DraftResearch) -> str:
+    """Convert structured draft research findings to an XML `<draft_research>` string.
+
+    Args:
+        research: The DraftResearch object to serialize.
+
+    Returns:
+        The XML string representation of the draft research sections and findings.
+    """
+
     root = ElementTree.Element("draft_research")
     sections_element = ElementTree.SubElement(root, "sections")
 

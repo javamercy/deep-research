@@ -16,7 +16,13 @@ from deep_research.configuration import Configuration
 from deep_research.formatting import draft_research_to_xml, processed_search_results_to_xml
 from deep_research.memory.sources import get_sources_by_ids
 from deep_research.openrouter import init_openrouter_model, init_openrouter_structured_model
-from deep_research.prompts.research import COMPRESS_SYSTEM_PROMPT, COMPRESS_USER_PROMPT, RESEARCHER_SYSTEM_PROMPT, VERIFY_RESEARCH_SYSTEM_PROMPT, VERIFY_RESEARCH_USER_PROMPT
+from deep_research.prompts.research import (
+    COMPRESS_SYSTEM_PROMPT,
+    COMPRESS_USER_PROMPT,
+    RESEARCHER_SYSTEM_PROMPT,
+    VERIFY_RESEARCH_SYSTEM_PROMPT,
+    VERIFY_RESEARCH_USER_PROMPT,
+)
 from deep_research.schemas import DraftResearch, ProcessedSearchResult, ResearchSection, VerifiedResearch
 from deep_research.state import ResearcherInputState, ResearcherOutputState, ResearcherState
 from deep_research.tools.search import tavily_search
@@ -34,8 +40,8 @@ async def conduct_research(
     """Analyze current state and decide on next actions.
 
     The model analyzes the current conversation state and decides whether to:
-    1. Invoke a tool for further research (goto "tool_node").
-    2. Compress the research findings into a summary (goto "compress_research").
+    1. Invoke a tool for further research (goto "researcher_tools").
+    2. Compress the research findings into a structured draft (goto "compress_research").
 
     Args:
         state (ResearcherState): The current state of the researcher, including messages and tool calls.
@@ -114,18 +120,18 @@ async def compress_research(
         state: ResearcherState,
         config: RunnableConfig
 ) -> dict:
-    """Compress research findings into a concise summary.
+    """Organize and compress research findings into a structured DraftResearch report.
 
-   Takes all the research messages and tool outputs and creates
-   a compressed summary suitable for the supervisor's decision-making.
+    Takes all research messages and tool outputs and extracts structured, source-attributed
+    findings for downstream verification and supervisor decision-making.
 
-   Args:
-       state (ResearcherState): The current state of the researcher, including messages and tool calls.
-       config (RunnableConfig): The configuration for the runnable, including model settings.
+    Args:
+        state (ResearcherState): The current state of the researcher, including messages and tool calls.
+        config (RunnableConfig): The configuration for the runnable, including model settings.
 
-   Returns:
-       Partial state update containing the compressed research summary and raw notes.
-   """
+    Returns:
+        Partial state update containing the structured draft_research and raw_notes.
+    """
 
     configuration = Configuration.from_runnable_config(config)
     compress_model = init_openrouter_structured_model(
@@ -168,6 +174,17 @@ async def verify_research(
         *,
         store: BaseStore
 ) -> dict:
+    """Audit draft research findings against stored sources and format verified citations.
+
+    Args:
+        state (ResearcherState): The current state of the researcher, including draft_research and messages.
+        config (RunnableConfig): The configuration for the runnable, including model settings.
+        store (BaseStore): The store containing session-scoped ProcessedSearchResult sources.
+
+    Returns:
+        Partial state update containing the formatted compressed_research markdown with citations.
+    """
+
     if store is None:
         raise ValueError("Runtime store is not available.")
 
@@ -238,6 +255,15 @@ async def verify_research(
 def _extract_source_ids_from_tool_messages(
         messages: Sequence[str]
 ) -> list[str]:
+    """Parse XML `<sources>` tool messages and extract all `<source id="...">` attributes.
+
+    Args:
+        messages: Sequence of XML string payloads from `tavily_search` tool messages.
+
+    Returns:
+        List of extracted 8-character hex source IDs.
+    """
+
     source_ids = []
     for message in messages:
         try:
@@ -263,7 +289,16 @@ def _format_verified_research(
         sections: Sequence[ResearchSection],
         sources_by_id: Mapping[str, ProcessedSearchResult]
 ) -> str:
-    """Render verified findings with sequential ([1], [2], ...) citations."""
+    """Render verified findings into markdown with sequential ([1], [2], ...) citations.
+
+    Args:
+        queries_and_tool_calls: Search queries executed during the research session.
+        sections: Verified thematic sections and findings to render.
+        sources_by_id: Mapping of valid source IDs to their ProcessedSearchResult metadata.
+
+    Returns:
+        Formatted markdown string containing queries, cited findings, and a numbered Sources list.
+    """
 
     citation_numbers: dict[str, int] = {}
     rendered_sections: list[str] = []
@@ -293,7 +328,7 @@ def _format_verified_research(
         if rendered_findings:
             heading = section.heading.strip()
             rendered_sections.append(
-                f"### {heading}\n" + "\n".join(rendered_findings)
+                f"### {heading}\n\n" + "\n".join(rendered_findings)
             )
 
     queries_block = "\n".join(f"- {q}" for q in queries_and_tool_calls)

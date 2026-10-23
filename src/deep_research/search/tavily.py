@@ -15,8 +15,12 @@ _DEFAULT_PORTS = frozenset({80, 443})
 
 @lru_cache(maxsize=1)
 def _get_tavily_client() -> AsyncTavilyClient:
-    """Lazily initialize and reuse a single AsyncTavilyClient instance."""
-    
+    """Lazily initialize and reuse a single AsyncTavilyClient instance.
+
+    Returns:
+        The cached AsyncTavilyClient instance.
+    """
+
     api_key = os.getenv("TAVILY_API_KEY")
     if not api_key:
         raise ValueError("TAVILY_API_KEY environment variable is not set.")
@@ -31,16 +35,16 @@ async def search_tavily(
         topic: Literal["general", "news", "finance"] = "general",
         include_raw_content: bool = True
 ) -> list[TavilySearchResult]:
-    """Perform search using Tavily API and return unique results.
+    """Perform a search using the Tavily API and return deduplicated results.
 
     Args:
-        query: Search query string
-        max_results: Maximum number of results per query
-        topic: Topic filter for search results
-        include_raw_content: Whether to include raw webpage content
+        query: Search query string.
+        max_results: Maximum number of results per query.
+        topic: Topic filter for search results.
+        include_raw_content: Whether to include raw webpage content.
 
     Returns:
-        Dictionary of unique search results keyed by URL
+        List of unique TavilySearchResult objects deduplicated by normalized URL.
     """
 
     client = _get_tavily_client()
@@ -56,6 +60,15 @@ async def search_tavily(
 
 
 def _deduplicate_and_map_search_results(search_results: list[dict]) -> list[TavilySearchResult]:
+    """Deduplicate raw Tavily search results by normalized URL and map to schema objects.
+
+    Args:
+        search_results: Raw result dictionaries returned by the Tavily API.
+
+    Returns:
+        List of deduplicated TavilySearchResult objects with deterministic 8-char IDs.
+    """
+
     mapped_results: list[TavilySearchResult] = []
 
     seen_urls: set[str] = set()
@@ -83,6 +96,12 @@ def _normalize_url(url: str) -> str:
 
     Two URLs that point to the same page should produce the same string.
     The result is not meant to be fetched or shown to the user.
+
+    Args:
+        url: The raw URL string to normalize.
+
+    Returns:
+        Canonicalized URL string with tracking parameters and default ports removed.
     """
 
     parts = urlsplit(url.strip())
