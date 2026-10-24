@@ -1,20 +1,22 @@
+from typing import Literal
+
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
+from langchain_core.stores import BaseStore
+from langgraph.types import Checkpointer, Command
 
 from deep_research.configuration import Configuration
 from deep_research.openrouter import init_openrouter_model
 from deep_research.prompts.final_report import GENERATE_FINAL_REPORT_SYSTEM_PROMPT, GENERATE_FINAL_REPORT_USER_PROMPT
-from deep_research.state import AgentState
+from deep_research.state import AgentState, WriterInputState
 from deep_research.utils import get_today_str
 
 
-async def writer(
-        state: AgentState,
+async def write_report(
+        state: WriterInputState,
         config: RunnableConfig
 ) -> dict:
-    """Final report generation node.
-
-    Synthesizes all research findings into a comprehensive final report.
+    """Synthesizes all research findings into a comprehensive final report.
 
     Args:
         state (AgentState): The current state of the agent, containing research notes and brief.
@@ -30,9 +32,7 @@ async def writer(
         session_id=configuration.session_id
     )
 
-    compressed_researches = state["compressed_researches"]
-    findings = "\n\n".join(compressed_researches)
-
+    # TODO: compressed_researches!!!
     messages = [
         SystemMessage(
             content=GENERATE_FINAL_REPORT_SYSTEM_PROMPT
@@ -40,7 +40,7 @@ async def writer(
         ),
         HumanMessage(
             content=GENERATE_FINAL_REPORT_USER_PROMPT
-            .format(findings=findings, research_brief=state["research_brief"])
+            .format(findings="", research_brief=state["research_brief"])
         )
     ]
     response = await writer_model.ainvoke(messages, config=config)
@@ -49,3 +49,14 @@ async def writer(
         "final_report": response.text,
         "messages": [AIMessage(f"Here is the final report:\n\n{response.text}")],
     }
+
+
+async def verify_report(
+        state: AgentState,
+        config: RunnableConfig
+) -> Command[Literal["write_report", "__end__"]]:
+    pass
+
+
+def build_writer_graph(checkpointer: Checkpointer, store: BaseStore | None = None):
+    pass

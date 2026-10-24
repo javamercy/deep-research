@@ -3,8 +3,7 @@ import logging
 from collections.abc import Sequence
 from typing import Literal, cast
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolCall, ToolMessage, \
-    filter_messages
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolCall, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.constants import START
 from langgraph.graph import StateGraph
@@ -49,14 +48,7 @@ async def supervisor(
     configuration = Configuration.from_runnable_config(config)
 
     if state.get("supervisor_iterations", 0) >= configuration.max_supervisor_iterations:
-        return Command(
-            goto="__end__",
-            update={
-                "compressed_researches": _extract_researches_from_supervisor_messages(
-                    state.get("supervisor_messages", [])
-                ),
-            },
-        )
+        return Command(goto="__end__")
 
     model_with_tools = (
         init_openrouter_model(
@@ -125,6 +117,7 @@ async def supervisor_tools(
     )
 
     tool_messages: list[ToolMessage] = []
+    compressed_researches: list[tuple[str, str]] = []
 
     try:
         update_plan_calls, conduct_research_calls = (
@@ -167,26 +160,31 @@ async def supervisor_tools(
             # TODO: Max concurrent research threads should be enforced here.
             researcher_outputs = await asyncio.gather(*threads)
 
-            researcher_tool_messages = [
-                ToolMessage(
-                    content=output.get("compressed_research", "Error occurred in researcher agent"),
-                    name=tool_call["name"],  # ConductResearch
-                    tool_call_id=tool_call["id"]
+            for output, tool_call in zip(researcher_outputs, conduct_research_calls, strict=True):
+                compressed_research = output.get("compressed_research", "Error occurred in researcher agent")
+                compressed_researches.append(
+                    (
+                        tool_call["args"]["research_topic"],
+                        compressed_research
+                    )
                 )
-                for output, tool_call in zip(researcher_outputs, conduct_research_calls, strict=True)
-            ]
+                tool_messages.append(
+                    ToolMessage(
+                        content=compressed_research,
+                        name=tool_call["name"],  # ConductResearch
+                        tool_call_id=tool_call["id"]
+                    )
+                )
 
-            tool_messages.extend(researcher_tool_messages)
-
-    except Exception:
-        logger.error("Error during supervisor tool execution")
+    except Exception as e:
+        logger.error(f"Error during supervisor tool execution {e}")
         raise
 
     if research_complete:
         return Command(
             goto="__end__",
             update={
-                "compressed_researches": _extract_researches_from_supervisor_messages(supervisor_messages),
+                "compressed_researches": compressed_researches,
                 "research_plan": research_plan,
             }
         )
@@ -237,32 +235,6 @@ def _extract_tool_calls_from_supervisor_message(
     ]
 
     return update_plan_calls, conduct_research_calls
-
-
-def _extract_researches_from_supervisor_messages(messages: Sequence[BaseMessage]) -> list[str]:
-    """Extract compressed_research notes from ToolMessage objects in supervisor message history.
-
-    This function retrieves the compressed research findings that sub-agents
-    return as ToolMessage content. When the supervisor delegates research to
-    sub-agents via ConductResearch tool calls, each sub-agent returns its
-    compressed findings as the content of a ToolMessage. This function
-    extracts all such ToolMessage content to compile the final research notes.
-
-    Args:
-        messages: List of messages from supervisor's conversation history
-
-    Returns:
-        List of research note strings extracted from ToolMessage objects
-    """
-
-    return [
-        tool_message.text
-        for tool_message in filter_messages(
-            messages,
-            include_names=["ConductResearch"],
-            include_types=[ToolMessage]
-        )
-    ]
 
 
 def build_supervisor_graph(checkpointer: Checkpointer, store: BaseStore | None = None):
