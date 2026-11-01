@@ -6,7 +6,7 @@ from langgraph.types import Checkpointer
 from deep_research.state import AgentInputState, AgentState
 from deep_research.workflows.scoping import build_scoping_graph
 from deep_research.workflows.supervisor import build_supervisor_graph
-from deep_research.workflows.writer import write_report
+from deep_research.workflows.writer import build_writer_graph
 
 
 def build_deep_research_graph(checkpointer: Checkpointer, store: BaseStore | None = None):
@@ -22,8 +22,8 @@ def build_deep_research_graph(checkpointer: Checkpointer, store: BaseStore | Non
     builder = StateGraph(AgentState, input_schema=AgentInputState)
 
     builder.add_node("scoping_graph", build_scoping_graph(checkpointer))
-    builder.add_node("supervisor_graph", build_supervisor_graph(checkpointer))
-    builder.add_node("writer_graph", write_report)
+    builder.add_node("supervisor_graph", build_supervisor_graph(checkpointer, store))
+    builder.add_node("writer_graph", build_writer_graph(checkpointer, store))
 
     builder.add_edge(START, "scoping_graph")
     builder.add_edge("scoping_graph", "supervisor_graph")

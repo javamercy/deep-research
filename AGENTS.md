@@ -94,7 +94,7 @@ flowchart TD
     subgraph SUPERVISOR["supervisor_graph: workflows/supervisor.py"]
         V1["supervisor: supervisor_llm_config, bound tools ConductResearch, UpdateResearchPlan, ResearchComplete"]
         V2["supervisor_tools: applies plan status updates, launches researchers"]
-        V_OUT(["output: notes, research_plan"])
+        V_OUT(["output: compressed_researches, research_plan"])
         V1 -->|" supervisor_iterations reached max_supervisor_iterations "| V_OUT
         V1 -->|" tool calls "| V2
         V2 -->|" ResearchComplete "| V_OUT
@@ -107,7 +107,7 @@ flowchart TD
         R1["conduct_research: researcher_llm_config, bound tool tavily_search"]
         R2["researcher_tools: ToolNode, counts researcher_tool_calls"]
         R3["compress_research: structured DraftResearch, compression_llm_config"]
-        R4["verify_research: structured VerifiedResearch, verifier_llm_config, formats citations"]
+        R4["verify_research: structured VerifiedResearch, research_verifier_llm_config, formats citations"]
         R1 -->|" tool calls and under max_researcher_tool_calls "| R2
         R2 --> R1
         R1 -->|" no tool calls, or limit reached "| R3
@@ -128,36 +128,41 @@ flowchart TD
 
     T4 -.->|" tool result "| R2
     T3 -.->|" get_sources_by_ids "| R4
-    R4 -->|" compressed_research becomes the ConductResearch ToolMessage, raw_notes accumulate "| V1
-    V_OUT -->|" notes, research_brief "| F1
+    T3 -.->|" get_sources_by_ids "| W2
+    R4 -->|" compressed_research becomes the ConductResearch ToolMessage, compressed_researches accumulate "| V1
+    V_OUT -->|" compressed_researches, research_brief "| W1
 
-    subgraph FINAL["workflows/final_report.py"]
-        F1["generate_final_report: writer_llm_config"]
+    subgraph WRITER["writer_graph: workflows/writer.py"]
+        W1["write_report: writer_llm_config, includes final_report and report_review on revisions"]
+        W2["review_report: structured FinalReportReview, report_reviewer_llm_config, formats citations"]
+        W1 --> W2
+        W2 -->|" issues, rewrite "| W1
     end
 
-    F1 --> OUT(["final_report and AIMessage"])
+    W2 -->|" approved, or max_report_reviewer_iterations reached "| OUT(["final_report and AIMessage"])
 ```
 
-`deep_research` (`workflows/deep_research.py`) chains `scoping_graph`, `supervisor_graph` and `generate_final_report`. It uses `AgentState` and takes only `messages` as input. `scoping_graph`, `supervisor_graph` and `researcher_graph` are also exported on their own through `studio.py` and `langgraph.json`.
+`deep_research` (`workflows/deep_research.py`) chains `scoping_graph`, `supervisor_graph` and `writer_graph`. It uses `AgentState` and takes only `messages` as input. `scoping_graph`, `supervisor_graph`, `researcher_graph` and `writer_graph` are also exported on their own through `studio.py` and `langgraph.json`.
 
 ### Config roles (`Configuration` in `configuration.py`)
 
-| Config                     | Used by                                                       |
-|----------------------------|---------------------------------------------------------------|
-| `scoping_llm_config`       | `assess_clarification`, `write_research_brief`, `create_plan` |
-| `supervisor_llm_config`    | `supervisor`                                                  |
-| `researcher_llm_config`    | `conduct_research`                                            |
-| `summarization_llm_config` | page summaries inside `tavily_search`                         |
-| `compression_llm_config`   | `compress_research`                                           |
-| `verifier_llm_config`      | `verify_research`                                             |
-| `writer_llm_config`        | `generate_final_report`                                       |
+| Config                         | Used by                                                       |
+|--------------------------------|---------------------------------------------------------------|
+| `scoping_llm_config`           | `assess_clarification`, `write_research_brief`, `create_plan` |
+| `supervisor_llm_config`        | `supervisor`                                                  |
+| `researcher_llm_config`        | `conduct_research`                                            |
+| `summarization_llm_config`     | page summaries inside `tavily_search`                         |
+| `compression_llm_config`       | `compress_research`                                           |
+| `research_verifier_llm_config` | `verify_research`                                             |
+| `writer_llm_config`            | `write_report`                                                |
+| `report_reviewer_llm_config`   | `review_report`                                               |
 
-Loop and size limits are `max_planning_iterations`, `max_supervisor_iterations`, `max_researcher_tool_calls`, `max_concurrent_research_threads`, `max_structured_output_retries` and `max_content_length`. Their current values are in `configuration.py`.
+Loop and size limits are `max_planning_iterations`, `max_supervisor_iterations`, `max_researcher_tool_calls`, `max_report_reviewer_iterations`, `max_concurrent_research_threads`, `max_structured_output_retries` and `max_content_length`. Their current values are in `configuration.py`.
 
 ## Layout
 
 - `src/deep_research/`
-    - `workflows/`: graph builders and nodes (`scoping`, `supervisor`, `research`, `final_report`, `deep_research`).
+    - `workflows/`: graph builders and nodes (`scoping`, `supervisor`, `research`, `writer`, `deep_research`).
     - `prompts/`: one prompt module per workflow.
     - `tools/`: LLM-callable tools (`search.py`, `supervisor.py`, `reflection.py`).
     - `search/`: Tavily client and result processing.
@@ -170,7 +175,7 @@ Loop and size limits are `max_planning_iterations`, `max_supervisor_iterations`,
 ## Gotchas
 
 - `Configuration.from_runnable_config` requires `configurable.thread_id`. It also provides `session_id` for the Store namespace and OpenRouter session tagging. Other fields resolve from `configurable` first, then from an env var named after the uppercased field, then from the class default.
-- `tavily_search` and `verify_research` raise if `store` is `None`, so any caller running `researcher_graph`, `supervisor_graph`, or `deep_research_graph` must provide a `BaseStore` (e.g., `InMemoryStore()`).
+- `tavily_search`, `verify_research` and `review_report` raise if `store` is `None`, so any caller running `researcher_graph`, `supervisor_graph`, `writer_graph`, or `deep_research_graph` must provide a `BaseStore` (e.g., `InMemoryStore()`).
 - `max_concurrent_research_threads` is passed to the supervisor prompt but not enforced in code (TODO in `supervisor_tools`).
 - `think_tool` (`tools/reflection.py`) is defined but not currently bound to any agent.
 - Interrupts (`ask_clarification`, `review_plan`) need a checkpointer. Graphs in `studio.py` are compiled with `checkpointer=None` (and `store=None`), which LangGraph Studio replaces at runtime.

@@ -215,7 +215,7 @@ async def verify_research(
     verified_sections: list[ResearchSection] = []
     if draft_research.sections and sources_by_id:
         verifier_model = init_openrouter_structured_model(
-            configuration.verifier_llm_config,
+            configuration.research_verifier_llm_config,
             session_id=configuration.session_id,
             output_schema=VerifiedResearch,
             max_retries=configuration.max_structured_output_retries

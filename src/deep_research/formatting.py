@@ -1,6 +1,6 @@
 from xml.etree import ElementTree
 
-from deep_research.schemas import DraftResearch, ProcessedSearchResult, ResearchPlan
+from deep_research.schemas import DraftResearch, FinalReportReview, ProcessedSearchResult, ResearchPlan
 
 
 def research_plan_to_xml(plan: ResearchPlan) -> str:
@@ -86,6 +86,32 @@ def draft_research_to_xml(research: DraftResearch) -> str:
             source_ids_element = ElementTree.SubElement(finding_element, "source_ids")
             for s_id in finding.source_ids:
                 ElementTree.SubElement(source_ids_element, "source_id").text = s_id
+
+    ElementTree.indent(root, space="  ")
+    return ElementTree.tostring(root, encoding="unicode", short_empty_elements=False)
+
+
+def final_report_review_to_xml(review: FinalReportReview) -> str:
+    """Convert a FinalReportReview object to an XML string representation.
+
+    Args:
+        review: The FinalReportReview object to serialize.
+
+    Returns:
+        The XML string representation of the final report review.
+    """
+
+    root = ElementTree.Element("report_review")
+    if review.issues is None:
+        return ElementTree.tostring(root, encoding="unicode", short_empty_elements=False)
+
+    issues_element = ElementTree.SubElement(root, "issues")
+
+    for issue in review.issues:
+        issue_element = ElementTree.SubElement(issues_element, "issue")
+        ElementTree.SubElement(issue_element, "section").text = issue.section
+        ElementTree.SubElement(issue_element, "description").text = issue.description
+        ElementTree.SubElement(issue_element, "fix_suggestion").text = issue.fix_suggestion
 
     ElementTree.indent(root, space="  ")
     return ElementTree.tostring(root, encoding="unicode", short_empty_elements=False)

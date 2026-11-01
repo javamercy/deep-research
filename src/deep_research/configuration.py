@@ -43,7 +43,7 @@ class Configuration(FrozenBaseModel):
         researcher_llm_config (LLMModelConfig): Configuration for the researcher LLM model.
         summarization_llm_config (LLMModelConfig): Configuration for the summarization LLM model.
         compression_llm_config (LLMModelConfig): Configuration for the compression LLM model.
-        verifier_llm_config (LLMModelConfig): Configuration for the verifier LLM model.
+        research_verifier_llm_config (LLMModelConfig): Configuration for the verifier LLM model.
         supervisor_llm_config (LLMModelConfig): Configuration for the supervisor LLM model.
         writer_llm_config (LLMModelConfig): Configuration for the writer LLM model.
     """
@@ -54,8 +54,9 @@ class Configuration(FrozenBaseModel):
     allow_collaborative_planning: bool = True
     max_planning_iterations: int = 3
     max_concurrent_research_threads: int = 5
-    max_supervisor_iterations: int = 1
-    max_researcher_tool_calls: int = 1
+    max_supervisor_iterations: int = 5
+    max_researcher_tool_calls: int = 3
+    max_report_reviewer_iterations: int = 3
     max_content_length: int = 20_000
 
     scoping_llm_config: LLMModelConfig = LLMModelConfig(
@@ -78,17 +79,24 @@ class Configuration(FrozenBaseModel):
         reasoning_effort="high",
         max_output_tokens=64_000,
     )
-    verifier_llm_config: LLMModelConfig = LLMModelConfig(
+    research_verifier_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
         reasoning_effort="high",
         max_output_tokens=64_000,
     )
     supervisor_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
+        reasoning_effort="high",
         max_output_tokens=32_000,
     )
     writer_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_FLASH,
+        reasoning_effort="high",
+        max_output_tokens=64_000,
+    )
+    report_reviewer_llm_config: LLMModelConfig = LLMModelConfig(
+        model=LLMModel.DEEPSEEK_V4_FLASH,
+        reasoning_effort="high",
         max_output_tokens=64_000,
     )
 

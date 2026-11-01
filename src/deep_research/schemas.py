@@ -203,3 +203,35 @@ class VerifiedResearch(FrozenBaseModel):
     updates: list[ResearchFindingUpdate] = Field(
         description="List of finding updates or removals. Leave empty if all findings in <draft_research> are already accurate and properly attributed."
     )
+
+
+# =============================================================================
+# Writer
+# =============================================================================
+
+class FinalReportIssue(FrozenBaseModel):
+    """Schema for a single issue identified in the final report."""
+
+    section: str = Field(
+        description="The heading or location in <final_report> where the issue was found."
+    )
+    description: str = Field(
+        description="Specific explanation of what is missing, ungrounded, misattributed, contradictory, or redundant in the report."
+    )
+    fix_suggestion: str = Field(
+        description="Concrete, actionable suggestion for how the writer can fix this issue using <findings>."
+    )
+
+
+class FinalReportReview(FrozenBaseModel):
+    """Schema for structured review of the final report."""
+
+    approved: bool = Field(
+        description=(
+            "True if the final report successfully synthesizes all research findings into a comprehensive, accurate, and well-structured report. "
+            "False only if one or more issues were identified that require revision."
+        )
+    )
+    issues: list[FinalReportIssue] | None = Field(
+        description="List of all identified issues in the final report. Null when approved is True."
+    )

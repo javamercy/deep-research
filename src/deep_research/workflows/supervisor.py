@@ -9,6 +9,7 @@ from langgraph.constants import START
 from langgraph.graph import StateGraph
 from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer, Command
+from pydantic import BaseModel
 
 from deep_research.configuration import Configuration
 from deep_research.formatting import research_plan_to_xml
@@ -22,12 +23,11 @@ from deep_research.workflows.research import build_researcher_graph
 
 logger = logging.getLogger(__name__)
 
-TOOLS = [ConductResearch, UpdateResearchPlan, ResearchComplete]
-
 
 async def supervisor(
         state: SupervisorState,
         config: RunnableConfig,
+        tools: Sequence[type[BaseModel]]
 ) -> Command[Literal["supervisor_tools", "__end__"]]:
     """Coordinate research activities.
 
@@ -55,7 +55,7 @@ async def supervisor(
             llm_config=configuration.supervisor_llm_config,
             session_id=configuration.session_id
         )
-        .bind_tools(TOOLS)
+        .bind_tools(tools)
     )
 
     messages = [
@@ -194,6 +194,7 @@ async def supervisor_tools(
         update={
             "research_plan": research_plan,
             "supervisor_messages": tool_messages,
+            "compressed_researches": compressed_researches,
         }
     )
 
@@ -247,6 +248,15 @@ def build_supervisor_graph(checkpointer: Checkpointer, store: BaseStore | None =
         The compiled supervisor graph.
     """
 
+    tools: list[type[BaseModel]] = [
+        ConductResearch,
+        UpdateResearchPlan,
+        ResearchComplete,
+    ]
+
+    async def supervisor_node(state: SupervisorState, config: RunnableConfig):
+        return await supervisor(state, config, tools)
+
     # pyrefly: ignore [bad-specialization]
     builder = StateGraph(
         SupervisorState,
@@ -256,7 +266,7 @@ def build_supervisor_graph(checkpointer: Checkpointer, store: BaseStore | None =
         output_schema=SupervisorOutputState
     )
 
-    builder.add_node("supervisor", supervisor)
+    builder.add_node("supervisor", supervisor_node)
     builder.add_node("supervisor_tools", supervisor_tools)
 
     builder.add_edge(START, "supervisor")
