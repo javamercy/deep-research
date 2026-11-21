@@ -1,7 +1,6 @@
 # AGENTS.md
 
-Multi-agent **deep
-research** system built on LangGraph. A user question is scoped into a brief and a plan, a supervisor delegates tasks to parallel researchers that search the web, and a writer produces the final report. Python 3.13, managed with `uv`. LLMs are served through OpenRouter, web search through Tavily, and evals and tracing through LangSmith.
+Multi-agent **deep research** system built on LangGraph. A user question is scoped into a brief and a plan, a supervisor delegates tasks to parallel researchers that search the web, and a writer produces the final report. Python 3.13, managed with `uv`. LLMs are served through OpenRouter, web search through Tavily, and evals and tracing through LangSmith.
 
 ## Hard rules (read first)
 
@@ -58,13 +57,6 @@ This stack changes fast, and the models in `LLMModel` are newer than your traini
 - Do not add `# pyrefly: ignore` without a reason. Existing ones work around LangGraph TypedDict typing.
 - `studio.py` compiles graphs at import time. Graph builders must have no import-time side effects, and `checkpointer` / `store` are passed in as arguments.
 - Commits follow `.github/git-commit-instructions.md` (Conventional Commits).
-
-### 4. Engineering learning notebook (`NOTES.md`)
-
-- `NOTES.md` is a persistent engineering notebook across sessions where the user is the learner, and you act as an expert teacher/mentor.
-- Whenever a discussion, design review, or debugging task surfaces a **non-obvious architectural pattern, production failure mode, prompt-engineering principle, or framework/runtime
-  gotcha** that goes beyond the user's existing baseline, collaboratively record it in `NOTES.md` with user's approval.
-- Before adding an entry, read `NOTES.md` to check the **Developer Baseline (What NOT to Add)** and existing notes. Write every new entry so it is completely self-contained for future contextless sessions using the file's `Context / Problem` $\rightarrow$ `Principle / Solution` $\rightarrow$ `Reasoning / Trade-offs` format.
 
 ## System flow
 
