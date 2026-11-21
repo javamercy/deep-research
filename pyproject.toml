@@ -31,13 +31,36 @@ requires = ["uv_build>=0.12.17,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.ruff]
-line-length = 999
+line-length = 100
+indent-width = 4
 target-version = "py313"
 src = ["src", "evals"]
 
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "lf"
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
+
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
-extend-ignore = ["E501"]
+select = [
+    "E", # Pycodestyle errors
+    "F", # Pyflakes
+    "I", # Import sorting
+    "B", # Bugbear: common bugs and design issues
+    "UP", # Python syntax modernization
+    "D", # Docstring conventions
+]
+
+ignore = [
+    "D1", # Do not require docstrings everywhere
+    "D417", # Do not require documenting every argument
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.pyrefly]
 python-version = "3.13"
