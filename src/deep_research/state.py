@@ -5,7 +5,11 @@ from typing import Annotated, TypedDict
 from langchain_core.messages import BaseMessage
 from langgraph.graph import MessagesState, add_messages
 
+from deep_research.channels import ValidatedLastValue
 from deep_research.schemas import DraftResearch, ResearchPlan
+
+ValidatedResearchPlan: type[ResearchPlan] = Annotated[ResearchPlan, ValidatedLastValue]
+ValidatedDraftResearch: type[DraftResearch] = Annotated[DraftResearch, ValidatedLastValue]
 
 
 class AgentInputState(MessagesState):
@@ -30,7 +34,7 @@ class AgentState(MessagesState):
     """
 
     research_brief: str
-    research_plan: ResearchPlan
+    research_plan: ValidatedResearchPlan
     supervisor_messages: Annotated[Sequence[BaseMessage], add_messages]
     compressed_researches: Annotated[list[tuple[str, str]], operator.add]
     final_report: str
@@ -63,7 +67,7 @@ class ScopingState(MessagesState):
 
     clarification_question: str
     research_brief: str
-    research_plan: ResearchPlan
+    research_plan: ValidatedResearchPlan
     plan_feedback: str
     plan_approved: bool
     planning_iterations: int
@@ -78,7 +82,7 @@ class ScopingOutputState(TypedDict):
     """
 
     research_brief: str
-    research_plan: ResearchPlan
+    research_plan: ValidatedResearchPlan
 
 
 class ResearcherInputState(TypedDict):
@@ -113,7 +117,7 @@ class ResearcherState(TypedDict):
     researcher_messages: Annotated[Sequence[BaseMessage], add_messages]
     research_topic: str
     researcher_tool_calls: int
-    draft_research: DraftResearch
+    draft_research: ValidatedDraftResearch
     compressed_research: str
 
 
@@ -134,7 +138,7 @@ class SupervisorInputState(TypedDict):
         supervisor_iterations (int): Counter tracking the number of iterations performed by the supervisor.
     """
 
-    research_plan: ResearchPlan
+    research_plan: ValidatedResearchPlan
     supervisor_iterations: int
 
 
@@ -152,7 +156,7 @@ class SupervisorState(TypedDict):
     """
 
     supervisor_messages: Annotated[Sequence[BaseMessage], add_messages]
-    research_plan: ResearchPlan
+    research_plan: ValidatedResearchPlan
     compressed_researches: Annotated[list[tuple[str, str]], operator.add]
     supervisor_iterations: int
 
@@ -165,7 +169,7 @@ class SupervisorOutputState(TypedDict):
         compressed_researches (list[tuple[str, str]): List of tuples containing research topics and their corresponding compressed research findings.
     """
 
-    research_plan: ResearchPlan
+    research_plan: ValidatedResearchPlan
     compressed_researches: Annotated[list[tuple[str, str]], operator.add]
 
 
