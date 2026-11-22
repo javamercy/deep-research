@@ -1,5 +1,4 @@
 {
-  "$schema": "https://langgra.ph/schema.json",
   "graphs": {
     "scoping_graph": "./src/deep_research/studio.py:scoping_graph",
     "researcher_graph": "./src/deep_research/studio.py:researcher_graph",
