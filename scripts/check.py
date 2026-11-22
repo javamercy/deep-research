@@ -3,6 +3,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+
 def run(*command: str) -> None:
     subprocess.run(
         command,
@@ -10,9 +11,12 @@ def run(*command: str) -> None:
         check=True,
     )
 
+
 def main() -> None:
-    run("ruff", "check", ".")
-    run("pyrefly", "check", "src", "evals")
+    run("ruff", "check")
+    run("pyrefly", "check")
+    run("ruff", "format")
+
 
 if __name__ == "__main__":
     main()

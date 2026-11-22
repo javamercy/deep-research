@@ -32,38 +32,51 @@ build-backend = "uv_build"
 
 [tool.ruff]
 line-length = 100
-indent-width = 4
-target-version = "py313"
 src = ["src", "evals"]
 
 [tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-skip-magic-trailing-comma = false
-line-ending = "lf"
 docstring-code-format = true
-docstring-code-line-length = "dynamic"
 
 [tool.ruff.lint]
 select = [
     "E", # Pycodestyle errors
+    "W", # Pycodestyle warnings
     "F", # Pyflakes
     "I", # Import sorting
     "B", # Bugbear: common bugs and design issues
     "UP", # Python syntax modernization
     "D", # Docstring conventions
+    "SIM", # Simplification suggestions
+    "C4", # Comprehension improvements
+    "PIE", # Miscellaneous lint cleanups
+    "PTH", # Prefer pathlib over os.path
+    "ASYNC", # Asyncio best practices
+    "TC", # Move type-only imports into TYPE_CHECKING
+    "RUF", # Ruff-specific rules (e.g., RUF006, RUF100)
 ]
 
 ignore = [
     "D1", # Do not require docstrings everywhere
     "D417", # Do not require documenting every argument
+    "E501", # Let `ruff format` manage line wrapping (avoids prompt/URL noise)
 ]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = [
+    "pydantic.BaseModel",
+    "deep_research.schemas.FrozenBaseModel",
+]
+
 [tool.pyrefly]
 python-version = "3.13"
+python-platform = "all"
+project-includes = ["src", "evals", "scripts"]
 search-path = ["src", "."]
 preset = "default"
 
+[tool.pyrefly.errors]
+unused-ignore = "error"
