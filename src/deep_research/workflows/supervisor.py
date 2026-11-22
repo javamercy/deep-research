@@ -254,7 +254,10 @@ def build_supervisor_graph(checkpointer: Checkpointer, store: BaseStore | None =
         ResearchComplete,
     ]
 
-    async def supervisor_node(state: SupervisorState, config: RunnableConfig):
+    async def supervisor_node(
+            state: SupervisorState,
+            config: RunnableConfig,
+    ) -> Command[Literal["supervisor_tools", "__end__"]]:
         return await supervisor(state, config, tools)
 
     # pyrefly: ignore [bad-specialization]
