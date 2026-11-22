@@ -41,13 +41,7 @@ class AgentState(MessagesState):
 
 
 class ScopingInputState(MessagesState):
-    """Input state for the scoping agent - only contains messages from user input.
-
-    Attributes:
-        planning_iterations (int): Counter tracking the number of planning iterations performed.
-    """
-
-    planning_iterations: int
+    """Input state for the scoping agent - only contains messages from user input."""
 
 
 class ScopingState(MessagesState):
@@ -73,7 +67,7 @@ class ScopingState(MessagesState):
     planning_iterations: int
 
 
-class ScopingOutputState(TypedDict):
+class ScopingOutputState(MessagesState):
     """Output state for the scoping agent's output containing the research brief and plan.
 
     Attributes:
@@ -91,12 +85,10 @@ class ResearcherInputState(TypedDict):
     Attributes:
         researcher_messages (Sequence[BaseMessage]): Messages exchanged with the research agent.
         research_topic (str): The research topic being investigated.
-        researcher_tool_calls (int): Counter tracking the number of tool calls made by the researcher.
     """
 
     researcher_messages: Annotated[Sequence[BaseMessage], add_messages]
     research_topic: str
-    researcher_tool_calls: int
 
 
 class ResearcherState(TypedDict):
@@ -135,11 +127,9 @@ class SupervisorInputState(TypedDict):
 
     Attributes:
         research_plan (ResearchPlan): The structured research plan to execute.
-        supervisor_iterations (int): Counter tracking the number of iterations performed by the supervisor.
     """
 
     research_plan: ValidatedResearchPlan
-    supervisor_iterations: int
 
 
 class SupervisorState(TypedDict):
