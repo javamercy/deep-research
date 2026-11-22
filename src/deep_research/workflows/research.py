@@ -158,7 +158,7 @@ async def compress_research(
         ),
     ]
     draft_research = _assign_finding_ids(
-        await compress_model.ainvoke(messages)
+        await compress_model.ainvoke(messages, config=config)
     )
 
     return {
@@ -235,7 +235,7 @@ async def verify_research(
             ))
         ]
 
-        verified_research = await verifier_model.ainvoke(messages)
+        verified_research = await verifier_model.ainvoke(messages, config=config)
         verified_sections = _apply_finding_updates(
             draft_research,
             verified_research.updates

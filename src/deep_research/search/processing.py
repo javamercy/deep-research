@@ -2,7 +2,7 @@ import logging
 
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.runnables import Runnable
+from langchain_core.runnables import Runnable, RunnableConfig
 
 from deep_research.prompts.research import SUMMARIZE_WEBPAGE_SYSTEM_PROMPT, SUMMARIZE_WEBPAGE_USER_PROMPT
 from deep_research.schemas import ContentSummary, ProcessedSearchResult, TavilySearchResult
@@ -15,6 +15,7 @@ async def process_search_result(
         search_result: TavilySearchResult,
         *,
         summarization_model: Runnable[LanguageModelInput, ContentSummary],
+        config: RunnableConfig | None = None,
         max_content_length: int = 20_000
 ) -> ProcessedSearchResult:
     """Process a single search result by summarizing its raw content or falling back to its snippet.
@@ -38,6 +39,7 @@ async def process_search_result(
         try:
             content_summary = await _summarize_webpage_content(
                 webpage_content,
+                config=config,
                 summarization_model=summarization_model
             )
             summary = content_summary.summary
@@ -60,6 +62,7 @@ async def _summarize_webpage_content(
         webpage_content: str,
         *,
         summarization_model: Runnable[LanguageModelInput, ContentSummary],
+        config: RunnableConfig | None = None,
 ) -> ContentSummary:
     """Summarize raw webpage content into a structured summary and key excerpts.
 
@@ -79,4 +82,4 @@ async def _summarize_webpage_content(
             content=SUMMARIZE_WEBPAGE_USER_PROMPT.format(webpage_content=webpage_content)
         )
     ]
-    return await summarization_model.ainvoke(messages)
+    return await summarization_model.ainvoke(messages, config=config)

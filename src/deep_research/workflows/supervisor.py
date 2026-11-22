@@ -74,7 +74,7 @@ async def supervisor(
         *state.get("supervisor_messages", [])
     ]
 
-    response = await model_with_tools.ainvoke(messages)
+    response = await model_with_tools.ainvoke(messages, config=config)
 
     return Command(
         goto="supervisor_tools",
@@ -150,7 +150,6 @@ async def supervisor_tools(
                         HumanMessage(content=tool_call["args"]["research_topic"])
                     ],
                     research_topic=tool_call["args"]["research_topic"],
-                    researcher_tool_calls=0,
                 )
 
                 # pyrefly: ignore [no-matching-overload]

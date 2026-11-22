@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 from weakref import WeakValueDictionary
 
 from langchain_core.language_models import LanguageModelInput
-from langchain_core.runnables import Runnable
+from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.tools import InjectedToolArg, tool
 from langgraph.prebuilt import ToolRuntime
 from langgraph.store.base import BaseStore
@@ -49,6 +49,7 @@ async def _get_or_process_source(
         session_id: str,
         summarization_model: Runnable[LanguageModelInput, ContentSummary],
         max_content_length: int,
+        config: RunnableConfig | None = None
 ) -> ProcessedSearchResult:
     """Retrieve an existing processed source from the store or summarize and store it under a lock.
 
@@ -72,7 +73,8 @@ async def _get_or_process_source(
         processed_result = await process_search_result(
             result,
             summarization_model=summarization_model,
-            max_content_length=max_content_length
+            max_content_length=max_content_length,
+            config=config
         )
         await store_source(store, processed_result, session_id=session_id)
         return processed_result
@@ -124,6 +126,7 @@ async def tavily_search(
                 session_id=configuration.session_id,
                 summarization_model=summarization_model,
                 max_content_length=configuration.max_content_length,
+                config=runtime.config
             )
             for search_result in search_results
         )
