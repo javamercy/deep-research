@@ -3,16 +3,24 @@ from collections.abc import Mapping, Sequence
 from typing import Literal
 from xml.etree import ElementTree
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage, filter_messages
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+    filter_messages,
+)
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
+from langgraph.runtime import Runtime
 from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer, Command
 
-from deep_research.configuration import Configuration
+from deep_research.configuration import Configuration, get_session_id
 from deep_research.formatting import draft_research_to_xml, processed_search_results_to_xml
 from deep_research.memory.sources import get_sources_by_ids
 from deep_research.openrouter import init_openrouter_model, init_openrouter_structured_model
@@ -39,10 +47,7 @@ logger = logging.getLogger(__name__)
 
 
 async def conduct_research(
-        state: ResearcherState,
-        config: RunnableConfig,
-        *,
-        tools: list[BaseTool]
+        state: ResearcherState, runtime: Runtime[Configuration], config: RunnableConfig, *, tools: list[BaseTool],
 ) -> Command[Literal["researcher_tools", "compress_research"]]:
     """Analyze current state and decide on next actions.
 
@@ -59,40 +64,30 @@ async def conduct_research(
         Command indicating the next node to go to and any state updates.
     """
 
-    configuration = Configuration.from_runnable_config(config)
+    configuration = Configuration.from_runtime(runtime, config)
+    session_id = get_session_id(config)
 
     if state.get("researcher_tool_calls", 0) >= configuration.max_researcher_tool_calls:
         return Command(goto="compress_research")
 
-    model_with_tools = (
-        init_openrouter_model(
-            llm_config=configuration.researcher_llm_config,
-            session_id=configuration.session_id
-        )
-        .bind_tools(tools)
-    )
+    model_with_tools = init_openrouter_model(
+        llm_config=configuration.researcher_llm_config, session_id=session_id,
+    ).bind_tools(tools)
 
     messages: list[BaseMessage] = [
-        SystemMessage(
-            content=RESEARCHER_SYSTEM_PROMPT.format(date=get_today_str())
-        ),
+        SystemMessage(content=RESEARCHER_SYSTEM_PROMPT.format(date=get_today_str())),
         *state["researcher_messages"],
     ]
     response = await model_with_tools.ainvoke(messages, config=config)
 
     return Command(
         goto="researcher_tools" if response.tool_calls else "compress_research",
-        update={
-            "researcher_messages": [response]
-        }
+        update={"researcher_messages": [response]},
     )
 
 
 async def researcher_tools(
-        state: ResearcherState,
-        config: RunnableConfig,
-        *,
-        tool_node: ToolNode
+        state: ResearcherState, config: RunnableConfig, *, tool_node: ToolNode
 ) -> dict:
     """Execute the tool calls made by the researcher.
 
@@ -117,16 +112,12 @@ async def researcher_tools(
     return {
         **result,
         "researcher_tool_calls": (
-                state.get("researcher_tool_calls", 0)
-                + len(last_message.tool_calls)
+                state.get("researcher_tool_calls", 0) + len(last_message.tool_calls)
         ),
     }
 
 
-async def compress_research(
-        state: ResearcherState,
-        config: RunnableConfig
-) -> dict:
+async def compress_research(state: ResearcherState, runtime: Runtime[Configuration], config: RunnableConfig) -> dict:
     """Organize and compress research findings into a structured DraftResearch report.
 
     Takes all research messages and tool outputs and extracts structured, source-attributed
@@ -140,26 +131,22 @@ async def compress_research(
         Partial state update containing the structured draft_research.
     """
 
-    configuration = Configuration.from_runnable_config(config)
+    configuration = Configuration.from_runtime(runtime, config)
+    session_id = get_session_id(config)
+
     compress_model = init_openrouter_structured_model(
         configuration.compression_llm_config,
         output_schema=DraftResearch,
-        session_id=configuration.session_id,
-        max_retries=configuration.max_structured_output_retries
+        session_id=session_id,
+        max_retries=configuration.max_structured_output_retries,
     )
 
     messages = [
-        SystemMessage(
-            content=COMPRESS_SYSTEM_PROMPT.format(date=get_today_str())
-        ),
+        SystemMessage(content=COMPRESS_SYSTEM_PROMPT.format(date=get_today_str())),
         *state["researcher_messages"],
-        HumanMessage(
-            content=COMPRESS_USER_PROMPT.format(research_topic=state["research_topic"])
-        ),
+        HumanMessage(content=COMPRESS_USER_PROMPT.format(research_topic=state["research_topic"])),
     ]
-    draft_research = _assign_finding_ids(
-        await compress_model.ainvoke(messages, config=config)
-    )
+    draft_research = _assign_finding_ids(await compress_model.ainvoke(messages, config=config))
 
     return {
         "draft_research": draft_research,
@@ -167,26 +154,24 @@ async def compress_research(
 
 
 async def verify_research(
-        state: ResearcherState,
-        config: RunnableConfig,
-        *,
-        store: BaseStore
+        state: ResearcherState, runtime: Runtime[Configuration], config: RunnableConfig,
 ) -> dict:
     """Audit draft research findings against stored sources and format verified citations.
 
     Args:
         state (ResearcherState): The current state of the researcher, including draft_research and messages.
         config (RunnableConfig): The configuration for the runnable, including model settings.
-        store (BaseStore): The store containing session-scoped ProcessedSearchResult sources.
 
     Returns:
         Partial state update containing the formatted compressed_research markdown with citations.
     """
 
-    if store is None:
+    if runtime.store is None:
         raise ValueError("Runtime store is not available.")
 
-    configuration = Configuration.from_runnable_config(config=config)
+    configuration = Configuration.from_runtime(runtime, config)
+    session_id = get_session_id(config)
+
     draft_research = state["draft_research"]
 
     tool_messages = [
@@ -194,7 +179,7 @@ async def verify_research(
         for tool_message in filter_messages(
             state["researcher_messages"],
             include_names=["tavily_search"],
-            include_types=[ToolMessage]
+            include_types=[ToolMessage],
         )
     ]
     tool_source_ids = _extract_source_ids_from_tool_messages(tool_messages)
@@ -207,49 +192,38 @@ async def verify_research(
     ]
 
     sources_by_id = await get_sources_by_ids(
-        store,
-        session_id=configuration.session_id,
-        source_ids=[*tool_source_ids, *draft_source_ids]
+        runtime.store, session_id=session_id, source_ids=[*tool_source_ids, *draft_source_ids],
     )
 
     verified_sections: list[ResearchSection] = []
     if draft_research.sections and sources_by_id:
         verifier_model = init_openrouter_structured_model(
             configuration.research_verifier_llm_config,
-            session_id=configuration.session_id,
+            session_id=session_id,
             output_schema=VerifiedResearch,
-            max_retries=configuration.max_structured_output_retries
+            max_retries=configuration.max_structured_output_retries,
         )
 
         messages = [
-            SystemMessage(content=VERIFY_RESEARCH_SYSTEM_PROMPT.format(
-                date=get_today_str()
-            )),
-            HumanMessage(content=VERIFY_RESEARCH_USER_PROMPT.format(
-                draft_research=draft_research_to_xml(
-                    draft_research
-                ),
-                sources=processed_search_results_to_xml(
-                    list(sources_by_id.values())
+            SystemMessage(content=VERIFY_RESEARCH_SYSTEM_PROMPT.format(date=get_today_str())),
+            HumanMessage(
+                content=VERIFY_RESEARCH_USER_PROMPT.format(
+                    draft_research=draft_research_to_xml(draft_research),
+                    sources=processed_search_results_to_xml(list(sources_by_id.values())),
                 )
-            ))
+            ),
         ]
 
         verified_research = await verifier_model.ainvoke(messages, config=config)
-        verified_sections = _apply_finding_updates(
-            draft_research,
-            verified_research.updates
-        )
+        verified_sections = _apply_finding_updates(draft_research, verified_research.updates)
 
     compressed_research = _format_verified_research(
         queries_and_tool_calls=draft_research.queries_and_tool_calls,
         sections=verified_sections,
-        sources_by_id=sources_by_id
+        sources_by_id=sources_by_id,
     )
 
-    return {
-        "compressed_research": compressed_research
-    }
+    return {"compressed_research": compressed_research}
 
 
 def _assign_finding_ids(draft_research: DraftResearch) -> DraftResearch:
@@ -294,11 +268,7 @@ def _apply_finding_updates(
     """
 
     updates_by_id = {update.finding_id: update for update in finding_updates}
-    known_ids = {
-        finding.id
-        for section in draft_research.sections
-        for finding in section.findings
-    }
+    known_ids = {finding.id for section in draft_research.sections for finding in section.findings}
     unknown_ids = updates_by_id.keys() - known_ids
 
     if unknown_ids:
@@ -309,7 +279,6 @@ def _apply_finding_updates(
 
     verified_sections: list[ResearchSection] = []
     for section in draft_research.sections:
-
         verified_findings: list[ResearchFinding] = []
         for finding in section.findings:
             update = updates_by_id.get(finding.id)
@@ -324,9 +293,7 @@ def _apply_finding_updates(
                 finding.model_copy(
                     update={
                         "statement": (
-                            update.statement
-                            if update.statement is not None
-                            else finding.statement
+                            update.statement if update.statement is not None else finding.statement
                         ),
                         "source_ids": (
                             update.source_ids
@@ -338,16 +305,12 @@ def _apply_finding_updates(
             )
 
         if verified_findings:
-            verified_sections.append(
-                section.model_copy(update={"findings": verified_findings})
-            )
+            verified_sections.append(section.model_copy(update={"findings": verified_findings}))
 
     return verified_sections
 
 
-def _extract_source_ids_from_tool_messages(
-        messages: Sequence[str]
-) -> list[str]:
+def _extract_source_ids_from_tool_messages(messages: Sequence[str]) -> list[str]:
     """Parse XML `<sources>` tool messages and extract all `<source id="...">` attributes.
 
     Args:
@@ -380,7 +343,7 @@ def _format_verified_research(
         *,
         queries_and_tool_calls: Sequence[str],
         sections: Sequence[ResearchSection],
-        sources_by_id: Mapping[str, ProcessedSearchResult]
+        sources_by_id: Mapping[str, ProcessedSearchResult],
 ) -> str:
     """Render verified findings into markdown with source ID citations.
 
@@ -404,10 +367,7 @@ def _format_verified_research(
                 continue
 
             valid_ids = list(
-                dict.fromkeys(
-                    s_id for s_id in finding.source_ids
-                    if s_id in sources_by_id
-                )
+                dict.fromkeys(s_id for s_id in finding.source_ids if s_id in sources_by_id)
             )
             if not valid_ids:
                 continue
@@ -419,13 +379,11 @@ def _format_verified_research(
 
                 markers.append(f"[{s_id}]")
 
-            rendered_findings.append(f"- {statement} {"".join(markers)}")
+            rendered_findings.append(f"- {statement} {''.join(markers)}")
 
         if rendered_findings:
             heading = section.heading.strip()
-            rendered_sections.append(
-                f"### {heading}\n\n" + "\n".join(rendered_findings)
-            )
+            rendered_sections.append(f"### {heading}\n\n" + "\n".join(rendered_findings))
 
     queries_block = "\n".join(f"- {q}" for q in queries_and_tool_calls)
     findings_block = "\n\n".join(rendered_sections)
@@ -437,7 +395,7 @@ def _format_verified_research(
     parts = [
         f"## List of Queries and Tool Calls Made\n{queries_block}",
         f"## Fully Comprehensive Findings\n\n{findings_block}",
-        f"### Sources\n{sources_block}"
+        f"### Sources\n{sources_block}",
     ]
 
     return "\n\n".join(parts)
@@ -449,7 +407,7 @@ def build_researcher_graph(checkpointer: Checkpointer, store: BaseStore | None =
     Args:
         checkpointer (Checkpointer): The checkpointer to use for the graph.
         store (BaseStore): The store to use for the graph.
-        
+
     Returns:
         The compiled research workflow graph.
     """
@@ -457,26 +415,15 @@ def build_researcher_graph(checkpointer: Checkpointer, store: BaseStore | None =
     tools: list[BaseTool] = [tavily_search]
 
     tool_node = ToolNode(
-        name="tool_node",
-        tools=tools,
-        messages_key="researcher_messages",
-        handle_tool_errors=True
+        name="tool_node", tools=tools, messages_key="researcher_messages", handle_tool_errors=True
     )
 
     async def conduct_research_node(
-            state: ResearcherState,
-            config: RunnableConfig
+            state: ResearcherState, runtime: Runtime[Configuration], config: RunnableConfig,
     ) -> Command[Literal["researcher_tools", "compress_research"]]:
-        return await conduct_research(
-            state,
-            config,
-            tools=tools
-        )
+        return await conduct_research(state, runtime, config, tools=tools)
 
-    async def researcher_tools_node(
-            state: ResearcherState,
-            config: RunnableConfig
-    ) -> dict:
+    async def researcher_tools_node(state: ResearcherState, config: RunnableConfig) -> dict:
         return await researcher_tools(
             state,
             config,
@@ -486,10 +433,12 @@ def build_researcher_graph(checkpointer: Checkpointer, store: BaseStore | None =
     # pyrefly: ignore [bad-specialization]
     builder = StateGraph(
         ResearcherState,
+        context_schema=Configuration,
         # pyrefly: ignore [bad-argument-type]
         input_schema=ResearcherInputState,
         # pyrefly: ignore [bad-argument-type]
-        output_schema=ResearcherOutputState)
+        output_schema=ResearcherOutputState,
+    )
 
     builder.add_node("conduct_research", conduct_research_node)
     builder.add_node("researcher_tools", researcher_tools_node)

@@ -9,7 +9,7 @@ from langchain_core.tools import InjectedToolArg, tool
 from langgraph.prebuilt import ToolRuntime
 from langgraph.store.base import BaseStore
 
-from deep_research.configuration import Configuration
+from deep_research.configuration import Configuration, get_session_id
 from deep_research.formatting import processed_search_results_to_xml
 from deep_research.memory.sources import get_source_by_id, store_source
 from deep_research.openrouter import init_openrouter_structured_model
@@ -83,7 +83,7 @@ async def _get_or_process_source(
 @tool(parse_docstring=True)
 async def tavily_search(
         query: str,
-        runtime: ToolRuntime,
+        runtime: ToolRuntime[Configuration],
         max_results: Annotated[int, InjectedToolArg] = 5,
         topic: Annotated[Literal["general", "news", "finance"], InjectedToolArg] = "general",
 ) -> str:
@@ -99,16 +99,17 @@ async def tavily_search(
         Formatted string of search results with summaries
     """
 
-    store = runtime.store
-    if store is None:
+    if runtime.store is None:
         raise ValueError("ToolRuntime store is not available.")
 
-    configuration = Configuration.from_runnable_config(runtime.config)
+    configuration = Configuration.from_runtime(runtime, runtime.config)
+    session_id = get_session_id(runtime.config)
+
     summarization_model = init_openrouter_structured_model(
         configuration.summarization_llm_config,
         output_schema=ContentSummary,
         max_retries=configuration.max_structured_output_retries,
-        session_id=configuration.session_id,
+        session_id=session_id,
     )
 
     search_results = await search_tavily(
@@ -121,9 +122,9 @@ async def tavily_search(
     processed_results = await asyncio.gather(
         *(
             _get_or_process_source(
-                store,
+                runtime.store,
                 search_result,
-                session_id=configuration.session_id,
+                session_id=session_id,
                 summarization_model=summarization_model,
                 max_content_length=configuration.max_content_length,
                 config=runtime.config

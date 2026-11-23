@@ -5,13 +5,27 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, get_
 from langchain_core.runnables import RunnableConfig
 from langgraph.constants import START
 from langgraph.graph import StateGraph
+from langgraph.runtime import Runtime
 from langgraph.types import Checkpointer, Command, interrupt
 
-from deep_research.configuration import Configuration
+from deep_research.configuration import Configuration, get_session_id
 from deep_research.formatting import research_plan_to_xml
 from deep_research.openrouter import init_openrouter_structured_model
-from deep_research.prompts.scoping import CLARIFICATION_SYSTEM_PROMPT, CLARIFICATION_USER_PROMPT, RESEARCH_PLANNING_SYSTEM_PROMPT, RESEARCH_PLANNING_USER_PROMPT, WRITE_RESEARCH_BRIEF_SYSTEM_PROMPT, WRITE_RESEARCH_BRIEF_USER_PROMPT
-from deep_research.schemas import ClarificationAnswer, ClarificationDecision, ResearchPlan, ResearchPlanReview, ResearchQuestion
+from deep_research.prompts.scoping import (
+    CLARIFICATION_SYSTEM_PROMPT,
+    CLARIFICATION_USER_PROMPT,
+    RESEARCH_PLANNING_SYSTEM_PROMPT,
+    RESEARCH_PLANNING_USER_PROMPT,
+    WRITE_RESEARCH_BRIEF_SYSTEM_PROMPT,
+    WRITE_RESEARCH_BRIEF_USER_PROMPT,
+)
+from deep_research.schemas import (
+    ClarificationAnswer,
+    ClarificationDecision,
+    ResearchPlan,
+    ResearchPlanReview,
+    ResearchQuestion,
+)
 from deep_research.state import ScopingInputState, ScopingOutputState, ScopingState
 from deep_research.utils import get_today_str
 
@@ -19,8 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 async def assess_clarification(
-        state: ScopingState,
-        config: RunnableConfig
+        state: ScopingState, runtime: Runtime[Configuration], config: RunnableConfig,
 ) -> Command[Literal["ask_clarification", "write_research_brief"]]:
     """Determine if the user's request contains sufficient information to proceed with research.
 
@@ -35,7 +48,8 @@ async def assess_clarification(
         Command indicating the next node to go to and any state updates.
     """
 
-    configuration = Configuration.from_runnable_config(config)
+    configuration = Configuration.from_runtime(runtime, config)
+    session_id = get_session_id(config)
 
     if not configuration.allow_clarification:
         return Command(goto="write_research_brief")
@@ -44,28 +58,27 @@ async def assess_clarification(
         configuration.scoping_llm_config,
         output_schema=ClarificationDecision,
         max_retries=configuration.max_structured_output_retries,
-        session_id=configuration.session_id
+        session_id=session_id,
     )
 
     messages = [
-        SystemMessage(content=CLARIFICATION_SYSTEM_PROMPT.format(
-            date=get_today_str()
-        )),
-        HumanMessage(content=CLARIFICATION_USER_PROMPT.format(
-            messages=get_buffer_string(messages=state["messages"])
-        ))
+        SystemMessage(content=CLARIFICATION_SYSTEM_PROMPT.format(date=get_today_str())),
+        HumanMessage(
+            content=CLARIFICATION_USER_PROMPT.format(
+                messages=get_buffer_string(messages=state["messages"])
+            )
+        ),
     ]
     response = await clarification_model.ainvoke(messages, config=config)
 
     if response.need_clarification:
         return Command(
-            goto="ask_clarification",
-            update={"clarification_question": response.question}
+            goto="ask_clarification", update={"clarification_question": response.question}
         )
     else:
         return Command(
             goto="write_research_brief",
-            update={"messages": [AIMessage(content=response.verification)]}
+            update={"messages": [AIMessage(content=response.verification)]},
         )
 
 
@@ -86,21 +99,15 @@ def ask_clarification(state: ScopingState) -> dict:
             "type": "clarification",
             "question": question,
         },
-        response_schema=ClarificationAnswer
+        response_schema=ClarificationAnswer,
     )
 
     return {
-        "messages": [
-            AIMessage(content=question),
-            HumanMessage(content=answer.answer)
-        ],
+        "messages": [AIMessage(content=question), HumanMessage(content=answer.answer)],
     }
 
 
-async def write_research_brief(
-        state: ScopingState,
-        config: RunnableConfig
-) -> dict:
+async def write_research_brief(state: ScopingState, runtime: Runtime[Configuration], config: RunnableConfig) -> dict:
     """
     Transform the conversation history into a comprehensive research brief.
 
@@ -115,23 +122,23 @@ async def write_research_brief(
         Partial state update containing the generated research brief.
     """
 
-    configuration = Configuration.from_runnable_config(config)
+    configuration = Configuration.from_runtime(runtime, config)
+    session_id = get_session_id(config)
 
     research_brief_model = init_openrouter_structured_model(
         configuration.scoping_llm_config,
         output_schema=ResearchQuestion,
         max_retries=configuration.max_structured_output_retries,
-        session_id=configuration.session_id
+        session_id=session_id,
     )
 
     messages = [
-        SystemMessage(
-            content=WRITE_RESEARCH_BRIEF_SYSTEM_PROMPT.format(
-                date=get_today_str()
-            )),
-        HumanMessage(content=WRITE_RESEARCH_BRIEF_USER_PROMPT.format(
-            messages=get_buffer_string(state["messages"])
-        ))
+        SystemMessage(content=WRITE_RESEARCH_BRIEF_SYSTEM_PROMPT.format(date=get_today_str())),
+        HumanMessage(
+            content=WRITE_RESEARCH_BRIEF_USER_PROMPT.format(
+                messages=get_buffer_string(state["messages"])
+            )
+        ),
     ]
     response = await research_brief_model.ainvoke(messages, config=config)
 
@@ -139,8 +146,7 @@ async def write_research_brief(
 
 
 async def create_plan(
-        state: ScopingState,
-        config: RunnableConfig
+        state: ScopingState, runtime: Runtime[Configuration], config: RunnableConfig,
 ) -> Command[Literal["review_plan", "__end__"]]:
     """Create a research plan based on the research brief.
 
@@ -152,31 +158,32 @@ async def create_plan(
         Command indicating the next node to go to and any state updates.
     """
 
-    configuration = Configuration.from_runnable_config(config)
+    configuration = Configuration.from_runtime(runtime, config)
+    session_id = get_session_id(config)
 
     planning_model = init_openrouter_structured_model(
         configuration.scoping_llm_config,
-        session_id=configuration.session_id,
+        session_id=session_id,
         max_retries=configuration.max_structured_output_retries,
-        output_schema=ResearchPlan
+        output_schema=ResearchPlan,
     )
 
     messages = [
-        SystemMessage(
-            content=RESEARCH_PLANNING_SYSTEM_PROMPT.format(date=get_today_str())
-        ),
+        SystemMessage(content=RESEARCH_PLANNING_SYSTEM_PROMPT.format(date=get_today_str())),
         HumanMessage(
             content=RESEARCH_PLANNING_USER_PROMPT.format(research_question=state["research_brief"])
-        )
+        ),
     ]
 
     research_plan = state.get("research_plan")
     if research_plan:
         messages.append(
-            HumanMessage(content=(
-                f"{research_plan_to_xml(research_plan)}\n\n"
-                f"<user_feedback>\n{state["plan_feedback"]}\n</user_feedback>"
-            ))
+            HumanMessage(
+                content=(
+                    f"{research_plan_to_xml(research_plan)}\n\n"
+                    f"<user_feedback>\n{state['plan_feedback']}\n</user_feedback>"
+                )
+            )
         )
 
     research_plan = await planning_model.ainvoke(messages, config=config)
@@ -185,14 +192,13 @@ async def create_plan(
         goto="review_plan" if configuration.allow_collaborative_planning else "__end__",
         update={
             "research_plan": research_plan,
-            "planning_iterations": state.get("planning_iterations", 0) + 1
-        }
+            "planning_iterations": state.get("planning_iterations", 0) + 1,
+        },
     )
 
 
 def review_plan(
-        state: ScopingState,
-        config: RunnableConfig
+        state: ScopingState, runtime: Runtime[Configuration], config: RunnableConfig
 ) -> Command[Literal["create_plan", "__end__"]]:
     """Review the proposed research plan and decide whether to approve it or request revisions.
 
@@ -207,26 +213,25 @@ def review_plan(
     response = interrupt(
         {
             "research_plan": state["research_plan"].model_dump(mode="json"),
-            "message": "Review the proposed research plan."
+            "message": "Review the proposed research plan.",
         },
-        response_schema=ResearchPlanReview
+        response_schema=ResearchPlanReview,
     )
 
-    configuration = Configuration.from_runnable_config(config)
+    configuration = Configuration.from_runtime(runtime, config)
 
     should_end = False
     if response.approved:
         should_end = True
     elif state.get("planning_iterations", 0) >= configuration.max_planning_iterations:
         should_end = True
-        logger.warning("Maximum planning iterations reached. Proceeding with the current research plan.")
+        logger.warning(
+            "Maximum planning iterations reached. Proceeding with the current research plan."
+        )
 
     return Command(
         goto="__end__" if should_end else "create_plan",
-        update={
-            "plan_approved": response.approved,
-            "plan_feedback": response.feedback
-        }
+        update={"plan_approved": response.approved, "plan_feedback": response.feedback},
     )
 
 
@@ -244,10 +249,11 @@ def build_scoping_graph(checkpointer: Checkpointer):
     # pyrefly: ignore [bad-specialization]
     builder = StateGraph(
         ScopingState,
+        context_schema=Configuration,
         # pyrefly: ignore [bad-argument-type]
         input_schema=ScopingInputState,
         # pyrefly: ignore [bad-argument-type]
-        output_schema=ScopingOutputState
+        output_schema=ScopingOutputState,
     )
 
     builder.add_node("assess_clarification", assess_clarification)

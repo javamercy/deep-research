@@ -3,6 +3,7 @@ from langgraph.graph import StateGraph
 from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer
 
+from deep_research.configuration import Configuration
 from deep_research.state import AgentInputState, AgentState
 from deep_research.workflows.scoping import build_scoping_graph
 from deep_research.workflows.supervisor import build_supervisor_graph
@@ -19,7 +20,11 @@ def build_deep_research_graph(checkpointer: Checkpointer, store: BaseStore | Non
     """
 
     # pyrefly: ignore [bad-argument-type, bad-specialization]
-    builder = StateGraph(AgentState, input_schema=AgentInputState)
+    builder = StateGraph(
+        AgentState,
+        input_schema=AgentInputState,
+        context_schema=Configuration,
+    )
 
     builder.add_node("scoping_graph", build_scoping_graph(checkpointer))
     builder.add_node("supervisor_graph", build_supervisor_graph(checkpointer, store))

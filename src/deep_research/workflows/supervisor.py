@@ -7,17 +7,28 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.runnables import RunnableConfig
 from langgraph.constants import START
 from langgraph.graph import StateGraph
+from langgraph.runtime import Runtime
 from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer, Command
 from pydantic import BaseModel
 
-from deep_research.configuration import Configuration
+from deep_research.configuration import Configuration, get_session_id
 from deep_research.formatting import research_plan_to_xml
 from deep_research.openrouter import init_openrouter_model
 from deep_research.prompts.supervisor import SUPERVISOR_SYSTEM_PROMPT, SUPERVISOR_USER_PROMPT
 from deep_research.schemas import ResearchPlan
-from deep_research.state import ResearcherInputState, SupervisorInputState, SupervisorOutputState, SupervisorState
-from deep_research.tools.supervisor import ConductResearch, ResearchComplete, UpdateResearchPlan, UpdateResearchTask
+from deep_research.state import (
+    ResearcherInputState,
+    SupervisorInputState,
+    SupervisorOutputState,
+    SupervisorState,
+)
+from deep_research.tools.supervisor import (
+    ConductResearch,
+    ResearchComplete,
+    UpdateResearchPlan,
+    UpdateResearchTask,
+)
 from deep_research.utils import get_today_str
 from deep_research.workflows.research import build_researcher_graph
 
@@ -25,9 +36,8 @@ logger = logging.getLogger(__name__)
 
 
 async def supervisor(
-        state: SupervisorState,
-        config: RunnableConfig,
-        tools: Sequence[type[BaseModel]]
+        state: SupervisorState, runtime: Runtime[Configuration], config: RunnableConfig,
+        tools: Sequence[type[BaseModel]],
 ) -> Command[Literal["supervisor_tools", "__end__"]]:
     """Coordinate research activities.
 
@@ -45,18 +55,15 @@ async def supervisor(
         Command indicating the next node to go to and any state updates, including supervisor messages and iteration count.
     """
 
-    configuration = Configuration.from_runnable_config(config)
+    configuration = Configuration.from_runtime(runtime, config)
+    session_id = get_session_id(config)
 
     if state.get("supervisor_iterations", 0) >= configuration.max_supervisor_iterations:
         return Command(goto="__end__")
 
-    model_with_tools = (
-        init_openrouter_model(
-            llm_config=configuration.supervisor_llm_config,
-            session_id=configuration.session_id
-        )
-        .bind_tools(tools)
-    )
+    model_with_tools = init_openrouter_model(
+        llm_config=configuration.supervisor_llm_config, session_id=session_id,
+    ).bind_tools(tools)
 
     messages = [
         SystemMessage(
@@ -71,7 +78,7 @@ async def supervisor(
                 research_plan=research_plan_to_xml(state["research_plan"]),
             )
         ),
-        *state.get("supervisor_messages", [])
+        *state.get("supervisor_messages", []),
     ]
 
     response = await model_with_tools.ainvoke(messages, config=config)
@@ -81,13 +88,12 @@ async def supervisor(
         update={
             "supervisor_messages": [response],
             "supervisor_iterations": state.get("supervisor_iterations", 0) + 1,
-        }
+        },
     )
 
 
 async def supervisor_tools(
-        state: SupervisorState,
-        config: RunnableConfig
+        state: SupervisorState, config: RunnableConfig
 ) -> Command[Literal["supervisor", "__end__"]]:
     """Execute supervisor decisions - either conduct research or end the process.
 
@@ -111,30 +117,26 @@ async def supervisor_tools(
     last_message = cast(AIMessage, supervisor_messages[-1])
 
     tool_calls = last_message.tool_calls
-    research_complete = any(
-        call["name"] == "ResearchComplete"
-        for call in tool_calls
-    )
+    research_complete = any(call["name"] == "ResearchComplete" for call in tool_calls)
 
     tool_messages: list[ToolMessage] = []
     compressed_researches: list[tuple[str, str]] = []
 
     try:
-        update_plan_calls, conduct_research_calls = (
-            _extract_tool_calls_from_supervisor_message(tool_calls)
+        update_plan_calls, conduct_research_calls = _extract_tool_calls_from_supervisor_message(
+            tool_calls
         )
 
         all_updates: list[UpdateResearchTask] = []
         for tool_call in update_plan_calls:
             all_updates.extend(
-                UpdateResearchTask.model_validate(raw)
-                for raw in tool_call["args"]["tasks"]
+                UpdateResearchTask.model_validate(raw) for raw in tool_call["args"]["tasks"]
             )
             tool_messages.append(
                 ToolMessage(
                     content=f"Updated {len(tool_call['args']['tasks'])} tasks in research plan",
                     name=tool_call["name"],  # UpdateResearchPlan
-                    tool_call_id=tool_call["id"]
+                    tool_call_id=tool_call["id"],
                 )
             )
 
@@ -146,9 +148,7 @@ async def supervisor_tools(
             threads = []
             for tool_call in conduct_research_calls:
                 input_state = ResearcherInputState(
-                    researcher_messages=[
-                        HumanMessage(content=tool_call["args"]["research_topic"])
-                    ],
+                    researcher_messages=[HumanMessage(content=tool_call["args"]["research_topic"])],
                     research_topic=tool_call["args"]["research_topic"],
                 )
 
@@ -160,18 +160,17 @@ async def supervisor_tools(
             researcher_outputs = await asyncio.gather(*threads)
 
             for output, tool_call in zip(researcher_outputs, conduct_research_calls, strict=True):
-                compressed_research = output.get("compressed_research", "Error occurred in researcher agent")
+                compressed_research = output.get(
+                    "compressed_research", "Error occurred in researcher agent"
+                )
                 compressed_researches.append(
-                    (
-                        tool_call["args"]["research_topic"],
-                        compressed_research
-                    )
+                    (tool_call["args"]["research_topic"], compressed_research)
                 )
                 tool_messages.append(
                     ToolMessage(
                         content=compressed_research,
                         name=tool_call["name"],  # ConductResearch
-                        tool_call_id=tool_call["id"]
+                        tool_call_id=tool_call["id"],
                     )
                 )
 
@@ -185,7 +184,7 @@ async def supervisor_tools(
             update={
                 "compressed_researches": compressed_researches,
                 "research_plan": research_plan,
-            }
+            },
         )
 
     return Command(
@@ -194,27 +193,25 @@ async def supervisor_tools(
             "research_plan": research_plan,
             "supervisor_messages": tool_messages,
             "compressed_researches": compressed_researches,
-        }
+        },
     )
 
 
 def _apply_task_updates(
-        plan: ResearchPlan,
-        task_updates: Sequence[UpdateResearchTask]
+        plan: ResearchPlan, task_updates: Sequence[UpdateResearchTask]
 ) -> ResearchPlan:
     status_by_id = {update.task_id: update.status for update in task_updates}
     unknown_ids = status_by_id.keys() - {task.id for task in plan.tasks}
 
     if unknown_ids:
-        logger.warning(
-            "UpdateResearchPlan referenced unknown task ids: %s", sorted(unknown_ids)
-        )
+        logger.warning("UpdateResearchPlan referenced unknown task ids: %s", sorted(unknown_ids))
 
     return plan.model_copy(
         update={
             "tasks": [
                 task.model_copy(update={"status": status_by_id[task.id]})
-                if task.id in status_by_id else task
+                if task.id in status_by_id
+                else task
                 for task in plan.tasks
             ]
         }
@@ -222,16 +219,14 @@ def _apply_task_updates(
 
 
 def _extract_tool_calls_from_supervisor_message(
-        tool_calls: list[ToolCall]
+        tool_calls: list[ToolCall],
 ) -> tuple[list[ToolCall], list[ToolCall]]:
     update_plan_calls = [
-        tool_call for tool_call in tool_calls
-        if tool_call["name"] == "UpdateResearchPlan"
+        tool_call for tool_call in tool_calls if tool_call["name"] == "UpdateResearchPlan"
     ]
 
     conduct_research_calls = [
-        tool_call for tool_call in tool_calls
-        if tool_call["name"] == "ConductResearch"
+        tool_call for tool_call in tool_calls if tool_call["name"] == "ConductResearch"
     ]
 
     return update_plan_calls, conduct_research_calls
@@ -255,17 +250,19 @@ def build_supervisor_graph(checkpointer: Checkpointer, store: BaseStore | None =
 
     async def supervisor_node(
             state: SupervisorState,
+            runtime: Runtime[Configuration],
             config: RunnableConfig,
     ) -> Command[Literal["supervisor_tools", "__end__"]]:
-        return await supervisor(state, config, tools)
+        return await supervisor(state, runtime, config, tools)
 
     # pyrefly: ignore [bad-specialization]
     builder = StateGraph(
         SupervisorState,
+        context_schema=Configuration,
         # pyrefly: ignore [bad-argument-type]
         input_schema=SupervisorInputState,
         # pyrefly: ignore [bad-argument-type]
-        output_schema=SupervisorOutputState
+        output_schema=SupervisorOutputState,
     )
 
     builder.add_node("supervisor", supervisor_node)
