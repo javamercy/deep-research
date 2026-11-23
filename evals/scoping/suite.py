@@ -1,6 +1,9 @@
 from deep_research.configuration import LLMModel, LLMModelConfig
 from evals.scoping.dataset import BRIEF_DATASET_NAME, PLAN_DATASET_NAME
-from evals.scoping.evaluators import create_research_brief_evaluators, create_research_plan_evaluators
+from evals.scoping.evaluators import (
+    create_research_brief_evaluators,
+    create_research_plan_evaluators,
+)
 from evals.scoping.target import brief_target, plan_target
 from evals.spec import EvalSpec
 

@@ -14,7 +14,7 @@ SUITES = {
     "plan": create_plan_spec,
     "research": create_research_spec,
     "supervisor": create_supervisor_spec,
-    "final_report": create_final_report_spec
+    "final_report": create_final_report_spec,
 }
 
 
@@ -25,7 +25,7 @@ async def main():
         "suite",
         type=str,
         choices=sorted(SUITES.keys()),
-        help="Name of the evaluation suite to run."
+        help="Name of the evaluation suite to run.",
     )
     args = parser.parse_args()
 
@@ -36,7 +36,7 @@ async def main():
         data=spec.dataset_name,
         evaluators=spec.evaluators,
         experiment_prefix=spec.experiment_prefix,
-        description=spec.description
+        description=spec.description,
     )
 
 

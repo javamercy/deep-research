@@ -1,8 +1,10 @@
+"""Scoping workflow for request clarification, research brief synthesis, and planning."""
+
 import logging
 from typing import Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, get_buffer_string
-from langchain_core.runnables import RunnableConfig
+from langgraph.config import get_config
 from langgraph.constants import START
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
@@ -33,21 +35,24 @@ logger = logging.getLogger(__name__)
 
 
 async def assess_clarification(
-        state: ScopingState, runtime: Runtime[Configuration], config: RunnableConfig,
+    state: ScopingState,
+    runtime: Runtime[Configuration],
 ) -> Command[Literal["ask_clarification", "write_research_brief"]]:
-    """Determine if the user's request contains sufficient information to proceed with research.
+    """Assess whether the user request needs clarification before research begins.
 
-    Uses structured output to make deterministic decisions and avoid hallucination.
-    Routes to either ask_clarification or write_research_brief based on the model's assessment.
-
-    Args:
-        state (ScopingState): The current state of the scoping process, including user messages.
-        config (RunnableConfig): The configuration for the runnable, including model settings.
+    Reads `messages` from state and resolves runtime settings (`allow_clarification`,
+    `scoping_llm_config`, `max_structured_output_retries`) plus `configurable.thread_id`
+    for session tracking. When `allow_clarification` is false, skips the model call and
+    routes directly to `write_research_brief`. Because `messages` uses the `add_messages`
+    reducer, the verification acknowledgement is returned as a single-item list to append
+    to the conversation.
 
     Returns:
-        Command indicating the next node to go to and any state updates.
+        A `Command` routing to `ask_clarification` with `clarification_question` set, or
+        to `write_research_brief` with an appended verification `AIMessage` (or no update
+        when clarification is disabled).
     """
-
+    config = get_config()
     configuration = Configuration.from_runtime(runtime, config)
     session_id = get_session_id(config)
 
@@ -83,15 +88,17 @@ async def assess_clarification(
 
 
 def ask_clarification(state: ScopingState) -> dict:
-    """Ask the user for clarification on their request.
+    """Interrupt execution to collect the user's answer to a clarification question.
 
-    Args:
-        state (ScopingState): The current state of the scoping process, including the clarification question.
+    Reads `clarification_question` from state and suspends the graph with payload
+    `{"type": "clarification", "question": ...}` and `response_schema=ClarificationAnswer`.
+    Requires a `checkpointer` at runtime and expects to be resumed with a
+    `ClarificationAnswer` payload (`answer`). Because `messages` uses the `add_messages`
+    reducer, only the new question `AIMessage` and answer `HumanMessage` are returned.
 
     Returns:
-        Partial state update containing the clarification question and the user's answer.
+        A partial state update appending the question and user answer to `messages`.
     """
-
     question = state["clarification_question"]
 
     answer = interrupt(
@@ -107,21 +114,17 @@ def ask_clarification(state: ScopingState) -> dict:
     }
 
 
-async def write_research_brief(state: ScopingState, runtime: Runtime[Configuration], config: RunnableConfig) -> dict:
-    """
-    Transform the conversation history into a comprehensive research brief.
+async def write_research_brief(state: ScopingState, runtime: Runtime[Configuration]) -> dict:
+    """Synthesize the conversation history into a structured research brief.
 
-    Uses structured output to ensure the brief follows the required format
-    and contains all necessary details for effective research.
-
-    Args:
-        state (ScopingState): The current state of the scoping process, including user messages.
-        config (RunnableConfig): The configuration for the runnable, including model settings.
+    Reads `messages` from state and invokes the scoping model (`scoping_llm_config`,
+    retried up to `max_structured_output_retries`) with `ResearchQuestion` structured
+    output. Requires `configurable.thread_id` for session tracking.
 
     Returns:
-        Partial state update containing the generated research brief.
+        A partial state update setting `research_brief`.
     """
-
+    config = get_config()
     configuration = Configuration.from_runtime(runtime, config)
     session_id = get_session_id(config)
 
@@ -146,18 +149,22 @@ async def write_research_brief(state: ScopingState, runtime: Runtime[Configurati
 
 
 async def create_plan(
-        state: ScopingState, runtime: Runtime[Configuration], config: RunnableConfig,
+    state: ScopingState,
+    runtime: Runtime[Configuration],
 ) -> Command[Literal["review_plan", "__end__"]]:
-    """Create a research plan based on the research brief.
+    """Generate a structured research plan or revise an existing plan from feedback.
 
-    Args:
-        state (ScopingState): The current state of the scoping process, including the research brief.
-        config (RunnableConfig): The configuration for the runnable, including model settings.
+    Reads `research_brief` and `planning_iterations` from state; when `research_plan`
+    is already present, also reads `plan_feedback` and appends the serialized plan and
+    feedback to the prompt for revision. Requires `configurable.thread_id` for session
+    tracking.
 
     Returns:
-        Command indicating the next node to go to and any state updates.
+        A `Command` updating `research_plan` and incrementing `planning_iterations`,
+        routing to `review_plan` when `allow_collaborative_planning` is enabled or
+        `__end__` otherwise.
     """
-
+    config = get_config()
     configuration = Configuration.from_runtime(runtime, config)
     session_id = get_session_id(config)
 
@@ -198,18 +205,21 @@ async def create_plan(
 
 
 def review_plan(
-        state: ScopingState, runtime: Runtime[Configuration], config: RunnableConfig
+    state: ScopingState, runtime: Runtime[Configuration]
 ) -> Command[Literal["create_plan", "__end__"]]:
-    """Review the proposed research plan and decide whether to approve it or request revisions.
+    """Interrupt for human review of the proposed research plan and route next steps.
 
-    Args:
-        state (ScopingState): The current state of the scoping process, including the research plan.
-        config (RunnableConfig): The configuration for the runnable, including model settings.
+    Reads `research_plan` and `planning_iterations` from state, then suspends execution
+    with `{"research_plan": <json dict>, "message": "Review the proposed research plan."}`
+    and `response_schema=ResearchPlanReview`. Requires a `checkpointer` at runtime and
+    resumes with a `ResearchPlanReview` payload (`approved`, `feedback`). Routes to
+    `__end__` when approved or when `planning_iterations` reaches
+    `max_planning_iterations` (logging a warning); otherwise routes back to `create_plan`.
 
     Returns:
-        Command indicating the next node to go to and any state updates.
+        A `Command` updating `plan_approved` and `plan_feedback` and routing to either
+        `create_plan` or `__end__`.
     """
-
     response = interrupt(
         {
             "research_plan": state["research_plan"].model_dump(mode="json"),
@@ -218,6 +228,7 @@ def review_plan(
         response_schema=ResearchPlanReview,
     )
 
+    config = get_config()
     configuration = Configuration.from_runtime(runtime, config)
 
     should_end = False
@@ -236,14 +247,23 @@ def review_plan(
 
 
 def build_scoping_graph(checkpointer: Checkpointer):
-    """Builds the scoping graph with the given checkpointer.
+    """Build and compile the scoping workflow graph.
+
+    Uses `ScopingState` internally with `ScopingInputState` as input, `ScopingOutputState`
+    as output, and `Configuration` as context schema. Declares fixed edges from `START`
+    to `assess_clarification`, `ask_clarification` back to `assess_clarification`, and
+    `write_research_brief` to `create_plan`; all branching and loop termination are
+    driven by `Command` returns in `assess_clarification`, `create_plan`, and
+    `review_plan`.
 
     Args:
-        checkpointer (Checkpointer): The checkpointer to use for the graph.
-    Returns:
-        The compiled scoping graph.
-    """
+        checkpointer: Checkpointer for state persistence, or `None` when supplied by the
+            runtime (such as LangGraph Studio). A checkpointer is required at execution
+            time for `ask_clarification` and `review_plan` interrupts.
 
+    Returns:
+        The compiled scoping workflow graph.
+    """
     # TODO: Workaround for Pyrefly/LangGraph TypedDict compatibility.
     # See: https://github.com/facebook/pyrefly/issues/3745
     # pyrefly: ignore [bad-specialization]

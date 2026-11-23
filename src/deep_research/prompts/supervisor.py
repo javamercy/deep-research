@@ -1,6 +1,23 @@
+"""Prompt templates for the supervisor workflow (`workflows.supervisor`).
+
+All templates are formatted with `str.format(...)` by the `supervisor` node in
+`deep_research.workflows.supervisor` and paired with tools in
+`deep_research.tools.supervisor`:
+
+- `SUPERVISOR_SYSTEM_PROMPT`: Instructs the supervisor to manage plan task
+  statuses, delegate parallel research, and signal completion. Requires
+  `{date}`, `{max_concurrent_research_threads}`, and
+  `{max_researcher_iterations}` (populated from
+  `Configuration.max_supervisor_iterations`). Expects tool calls from
+  `ConductResearch`, `UpdateResearchPlan` (`status` updates by `task_id`), and
+  `ResearchComplete`.
+- `SUPERVISOR_USER_PROMPT`: Presents the current `<research_plan>` XML before
+  accumulated supervisor messages. Requires `{research_plan}`.
+"""
+
 SUPERVISOR_SYSTEM_PROMPT = """
 <role>
-You are a research supervisor for a multi-agent research system. Your job is to execute and maintain an existing RESEARCH PLAN by delegating research, assessing findings and recording justified updates. 
+You are a research supervisor for a multi-agent research system. Your job is to execute and maintain an existing RESEARCH PLAN by delegating research, assessing findings and recording justified updates.
 </role>
 
 <task>
@@ -37,7 +54,7 @@ Think like a research manager with limited time and resources. Follow these step
 
 **completed**: The findings adequately address the objective and success criteria.
 
-Record status changes through UpdateResearchPlan. Do not claim a change was applied until the tool observation confirms it. 
+Record status changes through UpdateResearchPlan. Do not claim a change was applied until the tool observation confirms it.
 
 Do not mark a task completed solely because:
 - A research assignment returned and findings are detailed or appear plausible.

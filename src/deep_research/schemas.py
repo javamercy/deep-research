@@ -7,8 +7,9 @@ from pydantic.json_schema import SkipJsonSchema
 # Base
 # =============================================================================
 
+
 class FrozenBaseModel(BaseModel):
-    """Base model with frozen configuration."""
+    """Immutable Pydantic base model that forbids extra fields."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -17,8 +18,15 @@ class FrozenBaseModel(BaseModel):
 # Scoping
 # =============================================================================
 
+
 class ClarificationDecision(FrozenBaseModel):
-    """Decision about whether research requires user clarification."""
+    """Decision on whether to ask the user a clarifying question or begin research.
+
+    Set `need_clarification` to true with a concise `question` and an empty
+    `verification` when essential details or ambiguous terms must be resolved,
+    or false with an empty `question` and a brief `verification` when ready
+    to proceed.
+    """
 
     need_clarification: bool = Field(
         description="Whether the user needs to be asked a clarifying question.",
@@ -36,7 +44,10 @@ class ClarificationDecision(FrozenBaseModel):
 
 
 class ClarificationAnswer(FrozenBaseModel):
-    """Answer to a clarification question."""
+    """Human or caller resume payload answering a scoping clarification interrupt.
+
+    Passed as `response_schema` to `interrupt()` in `ask_clarification`.
+    """
 
     answer: str = Field(
         description="The user's answer to the clarification question.",
@@ -44,7 +55,11 @@ class ClarificationAnswer(FrozenBaseModel):
 
 
 class ResearchQuestion(FrozenBaseModel):
-    """Schema for structured research brief generation."""
+    """Detailed, self-contained research question guiding downstream investigation.
+
+    Synthesize the user's explicit requirements, constraints, and key
+    dimensions from the conversation without inventing unstated preferences.
+    """
 
     research_brief: str = Field(
         description="A research question that will be used to guide the research.",
@@ -52,7 +67,11 @@ class ResearchQuestion(FrozenBaseModel):
 
 
 class ResearchTask(FrozenBaseModel):
-    """Schema for structured research task generation."""
+    """Single investigative task within a research plan.
+
+    Define a distinct, non-overlapping investigation goal with verifiable
+    success criteria and only genuine prerequisite dependencies in `depends_on`.
+    """
 
     id: str = Field(
         description="A unique identifier for the research task. Should be related to the research objective.",
@@ -73,7 +92,7 @@ class ResearchTask(FrozenBaseModel):
 
 
 class ResearchPlan(FrozenBaseModel):
-    """Schema for structured research plan generation."""
+    """Structured set of investigative tasks decomposing the research question."""
 
     tasks: list[ResearchTask] = Field(
         description="A list of research tasks that will be executed to achieve the research.",
@@ -81,7 +100,12 @@ class ResearchPlan(FrozenBaseModel):
 
 
 class ResearchPlanReview(FrozenBaseModel):
-    """Schema for structured research plan review."""
+    """Human or caller resume payload reviewing a proposed research plan.
+
+    Passed as `response_schema` to `interrupt()` in `review_plan`. Setting
+    `approved` to false routes back to `create_plan` with `feedback` unless
+    `max_planning_iterations` has been reached.
+    """
 
     approved: bool = Field(
         description="Whether the research plan is approved or not.",
@@ -96,15 +120,31 @@ class ResearchPlanReview(FrozenBaseModel):
 # Search and Sources
 # =============================================================================
 
+
 class ContentSummary(FrozenBaseModel):
-    """Schema for webpage content summarization."""
+    """Structured summary and important verbatim excerpts from a retrieved webpage.
+
+    Preserve key facts, statistics, dates, entities, and credible quotes
+    needed by downstream research agents.
+    """
 
     summary: str = Field(description="Concise summary of the webpage content")
     key_excerpts: str = Field(description="Important quotes and excerpts from the content")
 
 
 class TavilySearchResult(FrozenBaseModel):
-    """Schema for a single search result from Tavily API."""
+    """Deduplicated search hit returned by the Tavily API before summarization.
+
+    Attributes:
+        id: Deterministic 8-character hex prefix of the SHA-256 digest of the
+            normalized URL.
+        url: Original result URL as returned by Tavily.
+        title: Page title, or an empty string if omitted.
+        content: Search snippet from Tavily, used as a fallback summary when
+            `raw_content` is missing.
+        score: Relevance score reported by Tavily.
+        raw_content: Raw webpage content when available, or `None`.
+    """
 
     id: str
     url: str
@@ -115,7 +155,20 @@ class TavilySearchResult(FrozenBaseModel):
 
 
 class ProcessedSearchResult(FrozenBaseModel):
-    """Schema for processed search result with summary and key excerpts."""
+    """Summarized search source persisted in the session store and cited in reports.
+
+    Attributes:
+        id: Deterministic 8-character hex source ID carried over from
+            `TavilySearchResult`.
+        url: Original source URL displayed in formatted bibliographies.
+        title: Page title displayed in formatted bibliographies.
+        summary: Webpage summary produced by `ContentSummary`, falling back to
+            the Tavily snippet when raw content is absent, or an empty string
+            if summarization fails.
+        key_excerpts: Important quotes and excerpts extracted during
+            summarization, or `None` when raw content is absent or
+            summarization fails.
+    """
 
     id: str
     url: str
@@ -130,7 +183,7 @@ class ProcessedSearchResult(FrozenBaseModel):
 
 
 class ResearchFinding(FrozenBaseModel):
-    """Schema for single factual research finding attributed to source IDs."""
+    """Discrete, source-backed factual finding without inline citation markers."""
 
     id: SkipJsonSchema[str] = Field(
         default="",
@@ -150,7 +203,7 @@ class ResearchFinding(FrozenBaseModel):
 
 
 class ResearchSection(FrozenBaseModel):
-    """Schema for thematic section grouping related research findings."""
+    """Thematic section grouping related evidence-backed research findings."""
 
     heading: str = Field(
         description="Descriptive heading for this thematic group of research findings."
@@ -161,7 +214,11 @@ class ResearchSection(FrozenBaseModel):
 
 
 class DraftResearch(FrozenBaseModel):
-    """Schema for structured research compression before citation and evidence verification."""
+    """Comprehensive, source-attributed draft organizing all gathered research findings.
+
+    Include every executed search query and group all relevant facts, metrics,
+    quotes, and source IDs from external search results into thematic sections.
+    """
 
     queries_and_tool_calls: list[str] = Field(
         description="List of search queries and external retrieval tool calls executed during the research conversation."
@@ -172,7 +229,11 @@ class DraftResearch(FrozenBaseModel):
 
 
 class ResearchFindingUpdate(FrozenBaseModel):
-    """Update applied to a single research finding in DraftResearch."""
+    """Correction or removal for a single finding in `<draft_research>`.
+
+    Emit only when a finding requires factual or citation correction
+    (`action: "update"`) or lacks support in `<sources>` (`action: "remove"`).
+    """
 
     finding_id: str = Field(
         description="The exact 'id' attribute of the <finding id='...'> in <draft_research> to update or remove."
@@ -198,7 +259,7 @@ class ResearchFindingUpdate(FrozenBaseModel):
 
 
 class VerifiedResearch(FrozenBaseModel):
-    """Schema for updates produced by auditing DraftResearch against stored sources."""
+    """Audit result listing only the finding updates or removals needed for `<draft_research>`."""
 
     updates: list[ResearchFindingUpdate] = Field(
         description="List of finding updates or removals. Leave empty if all findings in <draft_research> are already accurate and properly attributed."
@@ -209,8 +270,9 @@ class VerifiedResearch(FrozenBaseModel):
 # Writer
 # =============================================================================
 
+
 class FinalReportIssue(FrozenBaseModel):
-    """Schema for a single issue identified in the final report."""
+    """Single verification issue in `<final_report>` with a concrete fix grounded in `<findings>`."""
 
     section: str = Field(
         description="The heading or location in <final_report> where the issue was found."
@@ -224,7 +286,11 @@ class FinalReportIssue(FrozenBaseModel):
 
 
 class FinalReportReview(FrozenBaseModel):
-    """Schema for structured review of the final report."""
+    """Verification audit of `<final_report>` against `<research_question>` and `<findings>`.
+
+    Approve with `issues` set to `null` when all audit dimensions pass, or
+    reject with concrete, evidence-grounded issues requiring revision.
+    """
 
     approved: bool = Field(
         description=(

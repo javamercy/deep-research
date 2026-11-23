@@ -7,26 +7,33 @@ from deep_research.configuration import LLMModelConfig
 from deep_research.formatting import research_plan_to_xml
 from deep_research.openrouter import init_openrouter_structured_model
 from deep_research.schemas import ResearchPlan
-from evals.scoping.prompts import BRIEF_CRITERIA_SYSTEM_PROMPT, BRIEF_CRITERIA_USER_PROMPT, BRIEF_GROUNDEDNESS_SYSTEM_PROMPT, BRIEF_GROUNDEDNESS_USER_PROMPT, PLAN_ADEQUACY_SYSTEM_PROMPT, PLAN_ADEQUACY_USER_PROMPT
-from evals.scoping.schemas import BriefCriteriaEvaluation, BriefGroundednessEvaluation, PlanAdequacyEvaluation
+from evals.scoping.prompts import (
+    BRIEF_CRITERIA_SYSTEM_PROMPT,
+    BRIEF_CRITERIA_USER_PROMPT,
+    BRIEF_GROUNDEDNESS_SYSTEM_PROMPT,
+    BRIEF_GROUNDEDNESS_USER_PROMPT,
+    PLAN_ADEQUACY_SYSTEM_PROMPT,
+    PLAN_ADEQUACY_USER_PROMPT,
+)
+from evals.scoping.schemas import (
+    BriefCriteriaEvaluation,
+    BriefGroundednessEvaluation,
+    PlanAdequacyEvaluation,
+)
 from evals.types import EvaluatorFunc
 
 
 def create_research_brief_evaluators(judge_config: LLMModelConfig) -> list[EvaluatorFunc]:
     criteria_judge = init_openrouter_structured_model(
-        llm_config=judge_config,
-        output_schema=BriefCriteriaEvaluation
+        llm_config=judge_config, output_schema=BriefCriteriaEvaluation
     )
 
     groundedness_judge = init_openrouter_structured_model(
-        llm_config=judge_config,
-        output_schema=BriefGroundednessEvaluation
+        llm_config=judge_config, output_schema=BriefGroundednessEvaluation
     )
 
     async def research_brief_criteria_evaluator(
-            outputs: dict,
-            reference_outputs: dict,
-            run: Run
+        outputs: dict, reference_outputs: dict, run: Run
     ) -> EvaluationResult:
         research_brief = outputs.get("research_brief")
         criteria = reference_outputs.get("criteria")
@@ -47,30 +54,22 @@ def create_research_brief_evaluators(judge_config: LLMModelConfig) -> list[Evalu
                 ),
                 HumanMessage(
                     content=f"<criterion_to_evaluate>\n{criterion}\n</criterion_to_evaluate>"
-                )
+                ),
             ]
             for criterion in criteria
         ]
 
-        first = await (
-            criteria_judge
-            .bind(session_id=session_id)
-            .ainvoke(batch_messages[0])
-        )
+        first = await criteria_judge.bind(session_id=session_id).ainvoke(batch_messages[0])
 
-        remaining = await (
-            criteria_judge
-            .bind(session_id=session_id)
-            .abatch(batch_messages[1:], config={"max_concurrency": 4})
+        remaining = await criteria_judge.bind(session_id=session_id).abatch(
+            batch_messages[1:], config={"max_concurrency": 4}
         )
 
         responses = [first, *remaining]
 
         individual_evaluations = [
             BriefCriteriaEvaluation(
-                reasoning=response.reasoning,
-                criterion=criterion,
-                captured=response.captured
+                reasoning=response.reasoning, criterion=criterion, captured=response.captured
             )
             for criterion, response in zip(criteria, responses, strict=True)
         ]
@@ -83,20 +82,20 @@ def create_research_brief_evaluators(judge_config: LLMModelConfig) -> list[Evalu
             key="research_brief_criteria_evaluation",
             score=score,
             comment=f"Captured {captured_count}/{len(criteria)} criteria.",
-            extra={"individual_evaluations": [
-                {
-                    "criterion": eval_result.criterion,
-                    "captured": eval_result.captured,
-                    "reasoning": eval_result.reasoning
-                }
-                for eval_result in individual_evaluations
-            ]}
+            extra={
+                "individual_evaluations": [
+                    {
+                        "criterion": eval_result.criterion,
+                        "captured": eval_result.captured,
+                        "reasoning": eval_result.reasoning,
+                    }
+                    for eval_result in individual_evaluations
+                ]
+            },
         )
 
     async def research_brief_groundedness_evaluator(
-            outputs: dict,
-            reference_outputs: dict,
-            run: Run
+        outputs: dict, reference_outputs: dict, run: Run
     ) -> EvaluationResult:
         research_brief = outputs.get("research_brief")
         criteria = reference_outputs.get("criteria")
@@ -114,16 +113,10 @@ def create_research_brief_evaluators(judge_config: LLMModelConfig) -> list[Evalu
             HumanMessage(
                 content=BRIEF_GROUNDEDNESS_USER_PROMPT.format(research_brief=research_brief)
             ),
-            HumanMessage(
-                content=f"<criteria_to_evaluate>\n{criteria}\n</criteria_to_evaluate>"
-            )
+            HumanMessage(content=f"<criteria_to_evaluate>\n{criteria}\n</criteria_to_evaluate>"),
         ]
 
-        response = await (
-            groundedness_judge
-            .bind(session_id=session_id)
-            .ainvoke(messages)
-        )
+        response = await groundedness_judge.bind(session_id=session_id).ainvoke(messages)
 
         return EvaluationResult(
             key="research_brief_groundedness_evaluation",
@@ -136,14 +129,11 @@ def create_research_brief_evaluators(judge_config: LLMModelConfig) -> list[Evalu
 
 def create_research_plan_evaluators(judge_config: LLMModelConfig) -> list[EvaluatorFunc]:
     adequacy_judge = init_openrouter_structured_model(
-        llm_config=judge_config,
-        output_schema=PlanAdequacyEvaluation
+        llm_config=judge_config, output_schema=PlanAdequacyEvaluation
     )
 
     async def research_plan_adequacy_evaluator(
-            inputs: dict,
-            outputs: dict,
-            run: Run
+        inputs: dict, outputs: dict, run: Run
     ) -> EvaluationResult:
         research_plan = outputs.get("research_plan")
         if not research_plan or not isinstance(research_plan, ResearchPlan):
@@ -157,22 +147,15 @@ def create_research_plan_evaluators(judge_config: LLMModelConfig) -> list[Evalua
         formatted_plan = research_plan_to_xml(research_plan)
 
         messages = [
-            SystemMessage(
-                content=PLAN_ADEQUACY_SYSTEM_PROMPT
-            ),
+            SystemMessage(content=PLAN_ADEQUACY_SYSTEM_PROMPT),
             HumanMessage(
                 content=PLAN_ADEQUACY_USER_PROMPT.format(
-                    research_brief=research_brief,
-                    research_plan=formatted_plan
+                    research_brief=research_brief, research_plan=formatted_plan
                 )
             ),
         ]
 
-        response = await (
-            adequacy_judge
-            .bind(session_id=session_id)
-            .ainvoke(messages)
-        )
+        response = await adequacy_judge.bind(session_id=session_id).ainvoke(messages)
 
         return EvaluationResult(
             key="research_plan_adequacy_evaluation",

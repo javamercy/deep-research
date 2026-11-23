@@ -1,3 +1,26 @@
+"""Prompt templates for the scoping workflow (`workflows.scoping`).
+
+All templates are formatted with `str.format(...)` by nodes in
+`deep_research.workflows.scoping` and paired with structured-output schemas in
+`deep_research.schemas`:
+
+- `CLARIFICATION_SYSTEM_PROMPT`: Instructs the model to decide whether user
+  clarification is needed. Requires `{date}`. Paired with `ClarificationDecision`.
+- `CLARIFICATION_USER_PROMPT`: Wraps conversation history in
+  `<conversation_history>` for clarification assessment. Requires `{messages}`.
+- `WRITE_RESEARCH_BRIEF_SYSTEM_PROMPT`: Instructs the model to translate
+  conversation history into a first-person research brief. Requires `{date}`.
+  Paired with `ResearchQuestion`.
+- `WRITE_RESEARCH_BRIEF_USER_PROMPT`: Wraps conversation history in
+  `<conversation_history>` for brief generation. Requires `{messages}`.
+- `RESEARCH_PLANNING_SYSTEM_PROMPT`: Instructs the model to decompose a
+  research question into tasks or revise an existing plan from user feedback
+  (appended in a follow-up message on revisions). Requires `{date}`. Paired with
+  `ResearchPlan`.
+- `RESEARCH_PLANNING_USER_PROMPT`: Wraps the brief in `<research_question>` for
+  plan creation or revision. Requires `{research_question}`.
+"""
+
 from typing import Final
 
 CLARIFICATION_SYSTEM_PROMPT: Final[str] = """
@@ -52,7 +75,7 @@ These are the messages that have been exchanged so far from the user asking for 
 
 WRITE_RESEARCH_BRIEF_SYSTEM_PROMPT: Final[str] = """
 <task>
-You will be given a set of messages that have been exchanged so far between yourself and the user. 
+You will be given a set of messages that have been exchanged so far between yourself and the user.
 Your job is to translate these messages into a more detailed and concrete research question that will be used to guide the research.
 </task>
 

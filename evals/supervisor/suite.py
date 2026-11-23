@@ -11,5 +11,5 @@ def create_supervisor_spec() -> EvalSpec:
         dataset_name=DATASET_NAME,
         target=supervisor_target,
         evaluators=create_supervisor_evaluators(),
-        experiment_prefix="supervisor"
+        experiment_prefix="supervisor",
     )

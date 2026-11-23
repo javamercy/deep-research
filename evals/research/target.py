@@ -13,9 +13,8 @@ async def research_target(inputs: dict) -> dict[str, list[BaseMessage]]:
 
     config = create_eval_config()
     graph = build_researcher_graph(checkpointer=None)
-    result = await (
-        graph.nodes["conduct_research"]
-        .ainvoke({"researcher_messages": messages}, config=config)
+    result = await graph.nodes["conduct_research"].ainvoke(
+        {"researcher_messages": messages}, config=config
     )
 
     return result

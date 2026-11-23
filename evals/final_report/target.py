@@ -14,7 +14,4 @@ async def final_report_target(inputs: dict) -> dict[str, object]:
     config = create_eval_config()
     graph = build_deep_research_graph(checkpointer=None)
 
-    return await graph.nodes["generate_final_report"].ainvoke(
-        inputs,
-        config=config
-    )
+    return await graph.nodes["generate_final_report"].ainvoke(inputs, config=config)

@@ -1,10 +1,13 @@
+"""Runtime configuration models, environment overrides, and session helpers."""
+
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from enum import StrEnum
-from typing import Mapping, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
-from pydantic import model_validator, Field
+from pydantic import Field, model_validator
 
 from deep_research.schemas import FrozenBaseModel
 
@@ -15,7 +18,7 @@ if TYPE_CHECKING:
 
 
 class LLMModel(StrEnum):
-    """Enum representing different LLM models available for use."""
+    """Supported OpenRouter model identifiers."""
 
     DEEPSEEK_V4_FLASH = (
         "deepseek/deepseek-v4-flash-0731:floor"  # effort: none, low, high (default), max
@@ -29,7 +32,18 @@ class LLMModel(StrEnum):
 
 
 class LLMModelConfig(FrozenBaseModel):
-    """Configuration for a specific LLM model."""
+    """Model and provider parameters for a single agent role.
+
+    Attributes:
+        model: OpenRouter model identifier from `LLMModel`.
+        max_output_tokens: Completion token limit passed as
+            `max_completion_tokens`.
+        temperature: Sampling temperature, or `None` to use the provider
+            default.
+        reasoning_effort: Reasoning effort level passed to OpenRouter when set,
+            or `None` to omit explicit reasoning settings.
+        ignored_providers: OpenRouter provider slugs to exclude during routing.
+    """
 
     model: LLMModel
     max_output_tokens: int
@@ -39,15 +53,19 @@ class LLMModelConfig(FrozenBaseModel):
 
 
 def get_session_id(config: RunnableConfig) -> str:
-    """Extract the thread-scoped session ID from a RunnableConfig.
-    Args:
-        config: The RunnableConfig containing `configurable.thread_id`.
-    Returns:
-        The stringified `thread_id` used to scope store namespaces and OpenRouter sessions.
-    Raises:
-        ValueError: If `thread_id` is missing from `config["configurable"]`.
-    """
+    """Return the thread-scoped session ID from a `RunnableConfig`.
 
+    Reads `configurable.thread_id` and converts it to `str` for scoping store
+    namespaces and OpenRouter session tracking.
+
+    Args:
+        config: LangGraph runnable configuration containing
+            `configurable.thread_id`.
+
+    Raises:
+        ValueError: If `thread_id` is missing or `None` in
+            `config["configurable"]`.
+    """
     thread_id = config.get("configurable", {}).get("thread_id")
     if thread_id is None:
         raise ValueError("thread_id is not set in the configuration")
@@ -56,24 +74,37 @@ def get_session_id(config: RunnableConfig) -> str:
 
 
 class Configuration(FrozenBaseModel):
-    """Base configuration for the Deep Research framework.
+    """Runtime configuration for the deep research graphs.
+
+    When resolved via `from_runtime` or `_from_runnable_config`, values come
+    from `runtime.context` (if already a `Configuration` instance), then
+    `config["configurable"]`, then uppercased environment variables, and
+    finally class defaults.
 
     Attributes:
-        max_structured_output_retries (int): Maximum number of retries for structured output.
-        allow_clarification (bool): Whether to allow clarification during research.
-        allow_collaborative_planning (bool): Whether to allow collaborative planning.
-        max_planning_iterations (int): Maximum number of planning iterations.
-        max_concurrent_research_threads (int): Maximum number of concurrent research threads.
-        max_supervisor_iterations (int): Maximum number of supervisor iterations.
-        max_researcher_tool_calls (int): Maximum number of tool calls for researchers.
-        max_content_length (int): Maximum length of webpage content to be processed.
-        scoping_llm_config (LLMModelConfig): Configuration for the scoping LLM model.
-        researcher_llm_config (LLMModelConfig): Configuration for the researcher LLM model.
-        summarization_llm_config (LLMModelConfig): Configuration for the summarization LLM model.
-        compression_llm_config (LLMModelConfig): Configuration for the compression LLM model.
-        research_verifier_llm_config (LLMModelConfig): Configuration for the verifier LLM model.
-        supervisor_llm_config (LLMModelConfig): Configuration for the supervisor LLM model.
-        writer_llm_config (LLMModelConfig): Configuration for the writer LLM model.
+        max_structured_output_retries: Retry attempts for structured LLM calls.
+        allow_clarification: Whether scoping may pause to ask the user a
+            clarifying question.
+        allow_collaborative_planning: Whether scoping pauses for user plan
+            review and revision.
+        max_planning_iterations: Maximum planning revisions before proceeding.
+        max_concurrent_research_threads: Concurrency limit advertised to the
+            supervisor prompt.
+        max_supervisor_iterations: Maximum supervisor delegation turns.
+        max_researcher_tool_calls: Maximum tool calls allowed per researcher.
+        max_report_reviewer_iterations: Maximum writer-reviewer revision cycles.
+        max_content_length: Character limit for raw webpage content passed to
+            summarization.
+        scoping_llm_config: Model settings for clarification, brief, and plan
+            nodes.
+        researcher_llm_config: Model settings for `conduct_research`.
+        summarization_llm_config: Model settings for webpage summarization in
+            `tavily_search`.
+        compression_llm_config: Model settings for `compress_research`.
+        research_verifier_llm_config: Model settings for `verify_research`.
+        supervisor_llm_config: Model settings for the `supervisor` node.
+        writer_llm_config: Model settings for `write_report`.
+        report_reviewer_llm_config: Model settings for `review_report`.
     """
 
     max_structured_output_retries: int = 3
@@ -130,6 +161,7 @@ class Configuration(FrozenBaseModel):
     @model_validator(mode="before")
     @classmethod
     def _apply_env_defaults(cls, data: object) -> object:
+        """Populate omitted fields from uppercased environment variables."""
         if not isinstance(data, Mapping):
             return data
 
@@ -144,7 +176,11 @@ class Configuration(FrozenBaseModel):
 
     @classmethod
     def _from_runnable_config(cls, config: RunnableConfig) -> Configuration:
-        """Create a Configuration instance from a RunnableConfig."""
+        """Build a `Configuration` from `config["configurable"]`, env vars, and defaults.
+
+        Non-`None` entries in `config["configurable"]` take precedence over
+        uppercased environment variables, which in turn override class defaults.
+        """
         configurable = config.get("configurable", {})
         values = {
             field_name: configurable[field_name]
@@ -155,11 +191,21 @@ class Configuration(FrozenBaseModel):
 
     @classmethod
     def from_runtime(
-            cls,
-            runtime: Runtime[Configuration] | ToolRuntime[Configuration] | None,
-            config: RunnableConfig | None = None,
+        cls,
+        runtime: Runtime[Configuration] | ToolRuntime[Configuration] | None,
+        config: RunnableConfig | None = None,
     ) -> Configuration:
-        """Resolve Configuration from LangGraph `Runtime.context`, falling back to `RunnableConfig`."""
+        """Resolve `Configuration` from runtime context or `RunnableConfig`.
+
+        Returns `runtime.context` directly when it is already a `Configuration`
+        instance; otherwise falls back to `config["configurable"]`, uppercased
+        environment variables, and class defaults.
+
+        Args:
+            runtime: LangGraph node or tool runtime carrying `context`.
+            config: Optional runnable configuration used when `runtime.context`
+                is absent or not a `Configuration`.
+        """
         if runtime is not None and isinstance(runtime.context, cls):
             return runtime.context
 

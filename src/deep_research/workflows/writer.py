@@ -1,10 +1,12 @@
+"""Final report writer and review workflow with citation numbering."""
+
 import logging
 import re
 from typing import Literal
 from xml.etree import ElementTree
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_core.runnables import RunnableConfig
+from langgraph.config import get_config
 from langgraph.constants import START
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
@@ -31,22 +33,29 @@ _CITATION_GROUP_RE = re.compile(r"\[([0-9a-fA-F]{8}(?:\s*[,;]\s*[0-9a-fA-F]{8})*
 _HEX_ID_RE = re.compile(r"[0-9a-fA-F]{8}")
 
 
-async def write_report(state: WriterState, runtime: Runtime[Configuration], config: RunnableConfig, ) -> dict:
-    """Synthesizes all research findings into a comprehensive final report.
+async def write_report(
+    state: WriterState,
+    runtime: Runtime[Configuration],
+) -> dict:
+    """Synthesize or revise the Markdown final report from verified findings.
 
-    Args:
-        state (AgentState): The current state of the agent, containing research notes and brief.
-        config (RunnableConfig): The configuration for the runnable, including model settings.
+    Reads `research_brief`, `compressed_researches`, and optional `final_report`
+    and `report_review` from `WriterState`, requiring `configurable.thread_id`
+    in the runnable config for session tagging. Formats `compressed_researches`
+    as XML and invokes `writer_llm_config`; when both `final_report` and
+    `report_review` are present, appends them as a revision prompt.
 
     Returns:
-        Partial state update containing the final report and message.
+        Partial state update setting `final_report` with `[source_id]` hex
+        tags intact for downstream review and citation formatting.
     """
-
+    config = get_config()
     configuration = Configuration.from_runtime(runtime, config)
     session_id = get_session_id(config)
 
     writer_model = init_openrouter_model(
-        llm_config=configuration.writer_llm_config, session_id=session_id,
+        llm_config=configuration.writer_llm_config,
+        session_id=session_id,
     )
 
     messages = [
@@ -74,15 +83,12 @@ async def write_report(state: WriterState, runtime: Runtime[Configuration], conf
 
 
 def _compressed_researches_to_xml(compressed_researches: list[tuple[str, str]]) -> str:
-    """Converts a list of compressed research findings into an XML string.
+    """Serialize `(topic, content)` research tuples into an indented `<findings>` XML string.
 
-    Args:
-        compressed_researches (list[tuple[str, str]]): A list of tuples where each tuple contains a research topic and its corresponding compressed research finding.
-
-    Returns:
-        An XML string representation of the compressed research findings.
+    Preserves tuple order and relies on `ElementTree` text escaping to isolate
+    untrusted finding content inside `<topic>` and `<content>` elements, using
+    explicit closing tags even when empty.
     """
-
     root = ElementTree.Element("findings")
 
     for finding in compressed_researches:
@@ -96,11 +102,41 @@ def _compressed_researches_to_xml(compressed_researches: list[tuple[str, str]]) 
 
 
 async def review_report(
-        state: WriterState, runtime: Runtime[Configuration], config: RunnableConfig,
+    state: WriterState,
+    runtime: Runtime[Configuration],
 ) -> Command[Literal["write_report", "__end__"]]:
+    """Audit `final_report` against findings and finalize citations when approved.
+
+    Reads `final_report` and `writer_iterations` from `WriterState` (plus
+    `research_brief` and `compressed_researches` when below the iteration
+    limit), and requires `configurable.thread_id` in the runnable config.
+    Extracts cited source IDs and fetches their metadata from `runtime.store`
+    via `get_sources_by_ids`.
+
+    When `writer_iterations` reaches `max_report_reviewer_iterations`, skips LLM
+    review, logs any unknown source IDs, formats citations via
+    `_format_report_citations`, and exits with the finalized `final_report` and
+    an `AIMessage` appended to `messages` (via `add_messages`).
+
+    Otherwise invokes `report_reviewer_llm_config` with `FinalReportReview`
+    structured output. If the review approves yet unknown source IDs remain,
+    appends a synthetic `"Sources"` issue. When no issues remain, formats
+    citations and routes to `"__end__"`; otherwise serializes the failed review
+    to `report_review` XML, increments `writer_iterations` (plain `int`, no
+    reducer), and routes back to `"write_report"`.
+
+    Returns:
+        `Command` targeting `"__end__"` on finalization or `"write_report"`
+        for revision, with the corresponding state updates.
+
+    Raises:
+        ValueError: If `runtime.store` is `None` or `configurable.thread_id`
+            is missing.
+    """
     if runtime.store is None:
         raise ValueError("Runtime store is not  available.")
 
+    config = get_config()
     configuration = Configuration.from_runtime(runtime, config)
     session_id = get_session_id(config)
 
@@ -183,15 +219,12 @@ async def review_report(
 
 
 def _extract_source_ids_from_report(report: str) -> list[str]:
-    """Extracts all unique 8-character hex source IDs from the report.
+    """Extract unique lowercase 8-character hex source IDs from bracketed citations.
 
-    Args:
-        report: The final report string.
-
-    Returns:
-        A list of unique 8-character hex source IDs found in the report.
+    Matches single `[xxxxxxxx]` and comma- or semicolon-delimited citation
+    groups (for example `[a1b2c3d4, e5f60718]`), ignores numbered `[1]` or
+    unbracketed hex strings, and preserves first-appearance order.
     """
-
     source_ids = (
         s_id.lower()
         for group in _CITATION_GROUP_RE.findall(report)
@@ -201,10 +234,18 @@ def _extract_source_ids_from_report(report: str) -> list[str]:
 
 
 def _format_report_citations(
-        report: str, report_source_ids: list[str], sources_by_id: dict[str, ProcessedSearchResult]
+    report: str, report_source_ids: list[str], sources_by_id: dict[str, ProcessedSearchResult]
 ) -> str:
-    """Formats the report by replacing source IDs with numbered citations and appending a sources section."""
+    """Replace inline `[source_id]` tags with sequential `[n]` markers and append sources.
 
+    Filters `report_source_ids` (expected as unique lowercase IDs from
+    `_extract_source_ids_from_report`) to IDs present in `sources_by_id`,
+    preserving order for 1-based numbering. Within each matched citation group,
+    known IDs are deduplicated in group order and rendered as adjacent brackets
+    (`[1][2]`), while groups containing only unknown IDs are removed and any
+    resulting spaces before punctuation (`.,;:!?`) are collapsed. Appends a
+    `### Sources` bibliography only when at least one valid source was cited.
+    """
     valid_source_ids = [s_id for s_id in report_source_ids if s_id in sources_by_id]
 
     index_by_id = {source_id: index for index, source_id in enumerate(valid_source_ids, start=1)}
@@ -232,16 +273,26 @@ def _format_report_citations(
 
 
 def build_writer_graph(checkpointer: Checkpointer, store: BaseStore | None = None):
-    """Builds the writer graph for the multi-agent research system.
+    """Compile the writer `StateGraph` (`WriterInputState` -> `WriterOutputState`).
+
+    Uses `WriterState` internally with `Configuration` as `context_schema`.
+    Fixed edges connect `START -> write_report` and `write_report ->
+    review_report`, while `review_report` handles routing either back to
+    `"write_report"` for revisions or to `"__end__"` once approved or when
+    `max_report_reviewer_iterations` is reached.
+
+    `checkpointer` may be `None` when invoked as a sub-agent or in LangGraph
+    Studio. Although `store` defaults to `None` for Studio/sub-agent wiring, a
+    `BaseStore` must be provided at compile time or via the parent runtime
+    because `review_report` requires `runtime.store` for source lookups.
 
     Args:
-        checkpointer (Checkpointer): The checkpointer to manage state persistence.
-        store (BaseStore | None): Optional store for managing state and messages.
+        checkpointer: Checkpointer for graph state persistence, or `None`.
+        store: Optional `BaseStore` providing session-scoped search sources.
 
     Returns:
-        A dictionary representing the writer graph with nodes and edges.
+        Compiled writer workflow graph.
     """
-
     # pyrefly: ignore[bad-specialization]
     builder = StateGraph(
         WriterState,

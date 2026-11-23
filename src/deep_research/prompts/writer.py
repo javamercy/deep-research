@@ -1,3 +1,24 @@
+"""Prompt templates for the writer workflow (`workflows.writer`).
+
+All templates are formatted with `str.format(...)` by nodes in
+`deep_research.workflows.writer`:
+
+- `GENERATE_FINAL_REPORT_SYSTEM_PROMPT`: Instructs synthesizing `<findings>`
+  into a Markdown report (or revising `<final_report>` from `<report_review>`).
+  Requires `{date}`. Expects raw Markdown text using 8-character hex
+  `[source_id]` citations from `<findings>` and no `Sources` bibliography
+  section (converted and appended after approval).
+- `GENERATE_FINAL_REPORT_USER_PROMPT`: Supplies `<research_question>` and
+  `<findings>` XML for report generation. Requires `{research_question}` and
+  `{findings}`.
+- `REVIEW_FINAL_REPORT_SYSTEM_PROMPT`: Instructs auditing `<final_report>`
+  against `<research_question>` and `<findings>`. Requires `{date}`. Paired with
+  `FinalReportReview` (`approved`, plus `FinalReportIssue` items when rejected).
+- `REVIEW_FINAL_REPORT_USER_PROMPT`: Supplies `<research_question>` and
+  `<findings>` XML ahead of the `<final_report>` message under audit. Requires
+  `{research_question}` and `{findings}`.
+"""
+
 from typing import Final
 
 GENERATE_FINAL_REPORT_SYSTEM_PROMPT: Final[str] = """
@@ -38,7 +59,7 @@ Today's date is {date}.
 5. **Reader-Centric Structure & Formatting**:
     - Organize the report around a cohesive, reader-centric narrative tailored to `<research_question>`. Do NOT mechanically mirror the order of `<finding>` entries.
     - Choose the structure that best fits the request:
-        - *Comparisons*: Introduction -> dedicated analysis or side-by-side thematic dimensions -> structured comparison (using Markdown tables where helpful) -> conclusion/recommendations. 
+        - *Comparisons*: Introduction -> dedicated analysis or side-by-side thematic dimensions -> structured comparison (using Markdown tables where helpful) -> conclusion/recommendations.
         - *Deep overviews / technical analyses*: `# Title` -> executive overview -> deep thematic `##` sections (and `###` subsections) -> synthesis/conclusion.
         - *Direct lists / catalogs*: Focused sections or tables per item without unnecessary filler introductions or conclusions.
     - Write primarily in clear, detailed paragraphs using bullet points and Markdown tables where they improve clarity and scannability.
@@ -101,7 +122,7 @@ Evaluate `<final_report>` strictly across these five verification dimensions.
    - Is `<final_report>` written in the exact same language as `<research_question>`, and does it directly answer the user's core question while respecting explicit user constraints (including negative constraints)?
    - Did the writer synthesize all major relevant topics and substantive findings **available in `<findings>`** that help answer the question, rather than omitting whole researched areas?
    - *Note*: Do NOT treat upstream search-source instructions (e.g., "prioritize official websites") or illustrative examples (`e.g., ...`) in `<research_question>` as mandatory checklist items, and never penalize the report for omitting topics that have no evidence in `<findings>`.
-   
+
 2. **Evidence Grounding & Factual Fidelity (against `<findings>`)**:
    - Are all factual claims, causal explanations, and cross-topic comparisons substantiated by `<findings>` without ungrounded assumptions or external knowledge?
    - Are important quantitative metrics, percentages, dates, technical specifications from `<findings>` preserved accurately rather than paraphrased, rounded, or generalized?
@@ -125,7 +146,7 @@ Evaluate `<final_report>` strictly across these five verification dimensions.
   - Set `approved` to `true` and `issues` to `null` whenever `<final_report>` passes all five verification dimensions.
   - Do **NOT** reject a report for subjective stylistic preferences, minor phrasing tweaks, or alternative valid section orderings when the existing structure is clear and complete.
   - Never ask the writer to add external facts, metrics, or citations that are not present in `<findings>`.
-  
+
 - **When Report Fails Any Verification Dimensions (`approved: false`)**:
   - Populate `issues` with one entry per distinct issue, each containing:
     1. `section`: Quote the exact Markdown heading (e.g., `"## 2. Compute Requirements"`) or `"Global / Structure"` where the issue occurs.

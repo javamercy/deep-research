@@ -13,9 +13,8 @@ async def brief_target(inputs: dict) -> dict[str, object]:
 
     config = create_eval_config()
     graph = build_scoping_graph(checkpointer=None)
-    result = await (
-        graph.nodes["write_research_brief"]
-        .ainvoke({"messages": messages}, config=config)
+    result = await graph.nodes["write_research_brief"].ainvoke(
+        {"messages": messages}, config=config
     )
 
     return {"research_brief": result["research_brief"]}
@@ -28,9 +27,8 @@ async def plan_target(inputs: dict) -> dict[str, object]:
 
     config = create_eval_config(allow_collaborative_planning=False)
     graph = build_scoping_graph(checkpointer=None)
-    result = await (
-        graph.nodes["create_plan"]
-        .ainvoke({"research_brief": research_brief}, config=config)
+    result = await graph.nodes["create_plan"].ainvoke(
+        {"research_brief": research_brief}, config=config
     )
 
     return {"research_plan": result.update["research_plan"]}

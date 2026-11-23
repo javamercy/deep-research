@@ -1,3 +1,5 @@
+"""Supervisor workflow for coordinating research delegation and plan progress."""
+
 import asyncio
 import logging
 from collections.abc import Sequence
@@ -5,6 +7,7 @@ from typing import Literal, cast
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolCall, ToolMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.config import get_config
 from langgraph.constants import START
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
@@ -36,25 +39,26 @@ logger = logging.getLogger(__name__)
 
 
 async def supervisor(
-        state: SupervisorState, runtime: Runtime[Configuration], config: RunnableConfig,
-        tools: Sequence[type[BaseModel]],
+    state: SupervisorState,
+    runtime: Runtime[Configuration],
+    tools: Sequence[type[BaseModel]],
 ) -> Command[Literal["supervisor_tools", "__end__"]]:
-    """Coordinate research activities.
+    """Plan the next research delegations, plan status updates, or completion.
 
-    Analyzes the research plan to decide:
-    - What tasks need investigation
-    - What tasks need updates or revisions
-    - Whether to conduct parallel research
-    - When research is complete
+    Reads `supervisor_iterations`, `research_plan`, and `supervisor_messages` from state,
+    and requires `configurable.thread_id` for session tracking. Immediately terminates to
+    `__end__` when `supervisor_iterations` reaches `max_supervisor_iterations`. Otherwise
+    invokes the `supervisor_llm_config` model with `tools` bound and appends the response
+    via the `add_messages` reducer on `supervisor_messages`.
 
     Args:
-        state: Current supervisor state with messages and research progress
-        config: Runnable configuration for managing sub-agent execution
+        tools: Pydantic tool schemas bound to the supervisor model.
 
     Returns:
-        Command indicating the next node to go to and any state updates, including supervisor messages and iteration count.
+        A `Command` routing to `__end__` at the iteration limit, or to `supervisor_tools`
+        with the appended `AIMessage` and incremented `supervisor_iterations`.
     """
-
+    config = get_config()
     configuration = Configuration.from_runtime(runtime, config)
     session_id = get_session_id(config)
 
@@ -62,7 +66,8 @@ async def supervisor(
         return Command(goto="__end__")
 
     model_with_tools = init_openrouter_model(
-        llm_config=configuration.supervisor_llm_config, session_id=session_id,
+        llm_config=configuration.supervisor_llm_config,
+        session_id=session_id,
     ).bind_tools(tools)
 
     messages = [
@@ -93,28 +98,36 @@ async def supervisor(
 
 
 async def supervisor_tools(
-        state: SupervisorState, config: RunnableConfig
+    state: SupervisorState, config: RunnableConfig
 ) -> Command[Literal["supervisor", "__end__"]]:
-    """Execute supervisor decisions - either conduct research or end the process.
+    """Execute the supervisor's plan updates, researcher delegations, and completion signals.
 
-    Handles:
-    - Executing think_tool calls for strategic reflection
-    - Launching parallel research agents for different topics
-    - Aggregating research results
-    - Determining when research is complete
+    Reads the trailing `AIMessage` from `supervisor_messages` and the current
+    `research_plan` from state. Applies any `UpdateResearchPlan` task status updates first.
+    Unless `ResearchComplete` was also called, runs each `ConductResearch` call concurrently
+    via `build_researcher_graph(checkpointer=None)` and `asyncio.gather` (passing `config`
+    so runtime configuration and `BaseStore` propagate; `max_concurrent_research_threads`
+    is not enforced).
 
-    Args:
-       state: Current supervisor state with messages and iteration count
-       config: Runnable configuration for managing sub-agent execution
+    Because `supervisor_messages` uses `add_messages` and `compressed_researches` uses
+    `operator.add`, only new `ToolMessage` entries and newly gathered
+    `(research_topic, compressed_research)` pairs are returned, while `research_plan`
+    replaces the prior plan.
 
     Returns:
-       Command to either return to the supervisor for further planning or end the research process.
-    """
+        A `Command` routing to `__end__` with updated `research_plan` and
+        `compressed_researches` when `ResearchComplete` is present (skipping any
+        `ConductResearch` calls), or back to `supervisor` with `supervisor_messages`,
+        `research_plan`, and `compressed_researches`.
 
+    Raises:
+        Exception: Logs and re-raises any error during tool-call validation or
+            researcher execution.
+    """
     # TODO: Exception handling for tool execution failures, including logging and fallback strategies
 
     supervisor_messages = state["supervisor_messages"]
-    last_message = cast(AIMessage, supervisor_messages[-1])
+    last_message = cast("AIMessage", supervisor_messages[-1])
 
     tool_calls = last_message.tool_calls
     research_complete = any(call["name"] == "ResearchComplete" for call in tool_calls)
@@ -198,8 +211,13 @@ async def supervisor_tools(
 
 
 def _apply_task_updates(
-        plan: ResearchPlan, task_updates: Sequence[UpdateResearchTask]
+    plan: ResearchPlan, task_updates: Sequence[UpdateResearchTask]
 ) -> ResearchPlan:
+    """Return a copy of `plan` with task statuses updated from `task_updates`.
+
+    If multiple updates target the same `task_id`, the last one wins. Unknown task IDs
+    are logged as a warning and ignored; task ordering and all other fields are preserved.
+    """
     status_by_id = {update.task_id: update.status for update in task_updates}
     unknown_ids = status_by_id.keys() - {task.id for task in plan.tasks}
 
@@ -219,8 +237,13 @@ def _apply_task_updates(
 
 
 def _extract_tool_calls_from_supervisor_message(
-        tool_calls: list[ToolCall],
+    tool_calls: list[ToolCall],
 ) -> tuple[list[ToolCall], list[ToolCall]]:
+    """Partition supervisor tool calls into plan updates and research delegations.
+
+    Preserves relative order within each list and ignores other tool calls such as
+    `ResearchComplete`, returning `(update_plan_calls, conduct_research_calls)`.
+    """
     update_plan_calls = [
         tool_call for tool_call in tool_calls if tool_call["name"] == "UpdateResearchPlan"
     ]
@@ -233,15 +256,25 @@ def _extract_tool_calls_from_supervisor_message(
 
 
 def build_supervisor_graph(checkpointer: Checkpointer, store: BaseStore | None = None):
-    """Builds the supervisor graph with the given checkpointer.
+    """Build and compile the supervisor workflow graph.
+
+    Uses `SupervisorState` internally with `SupervisorInputState` as input,
+    `SupervisorOutputState` as output, and `Configuration` as context schema. Binds
+    `ConductResearch`, `UpdateResearchPlan`, and `ResearchComplete` to the `supervisor`
+    node. Declares a single fixed edge from `START` to `supervisor`; all subsequent
+    transitions and termination are driven by `Command` returns in `supervisor` and
+    `supervisor_tools`.
 
     Args:
-        checkpointer (Checkpointer): The checkpointer to use for the graph.
+        checkpointer: Checkpointer for state persistence, or `None` when supplied by the
+            runtime.
+        store: Store passed to the compiled graph, or `None` when supplied by the
+            runtime (such as LangGraph Studio). A `BaseStore` is required at execution time
+            for researcher subgraphs.
 
     Returns:
-        The compiled supervisor graph.
+        The compiled supervisor workflow graph.
     """
-
     tools: list[type[BaseModel]] = [
         ConductResearch,
         UpdateResearchPlan,
@@ -249,11 +282,10 @@ def build_supervisor_graph(checkpointer: Checkpointer, store: BaseStore | None =
     ]
 
     async def supervisor_node(
-            state: SupervisorState,
-            runtime: Runtime[Configuration],
-            config: RunnableConfig,
+        state: SupervisorState,
+        runtime: Runtime[Configuration],
     ) -> Command[Literal["supervisor_tools", "__end__"]]:
-        return await supervisor(state, runtime, config, tools)
+        return await supervisor(state, runtime, tools)
 
     # pyrefly: ignore [bad-specialization]
     builder = StateGraph(

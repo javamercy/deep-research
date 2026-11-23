@@ -28,10 +28,7 @@ def load_examples_from_jsonl(path: Path) -> list[DatasetExample]:
 
 
 def ensure_dataset(
-        ls_client: Client,
-        *,
-        dataset_name: str,
-        examples: list[DatasetExample]
+    ls_client: Client, *, dataset_name: str, examples: list[DatasetExample]
 ) -> Dataset:
     dataset = (
         ls_client.read_dataset(dataset_name=dataset_name)
@@ -40,8 +37,7 @@ def ensure_dataset(
     )
 
     existing_examples = {
-        example.id: example
-        for example in ls_client.list_examples(dataset_id=dataset.id)
+        example.id: example for example in ls_client.list_examples(dataset_id=dataset.id)
     }
 
     additions: list[dict] = []
@@ -53,9 +49,9 @@ def ensure_dataset(
         if current_example is None:
             additions.append({"id": example_id, **payload})
         elif (
-                current_example.inputs != example.inputs
-                or (current_example.outputs or {}) != example.outputs
-                or (current_example.metadata or {}) != example.metadata
+            current_example.inputs != example.inputs
+            or (current_example.outputs or {}) != example.outputs
+            or (current_example.metadata or {}) != example.metadata
         ):
             ls_client.update_example(example_id=example_id, **payload)
 

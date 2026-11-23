@@ -1,21 +1,38 @@
+"""XML serialization helpers for inserting structured data into LLM prompts.
+
+All functions build elements with `xml.etree.ElementTree` and serialize with
+`short_empty_elements=False`. Standard XML character escaping applies to element
+text and attributes, without tag stripping or prompt-injection sanitization;
+prompts rely on outer XML tags paired with `<data_boundaries>` instructions to
+isolate untrusted content.
+"""
+
 from xml.etree import ElementTree
 
-from deep_research.schemas import DraftResearch, FinalReportReview, ProcessedSearchResult, ResearchPlan
+from deep_research.schemas import (
+    DraftResearch,
+    FinalReportReview,
+    ProcessedSearchResult,
+    ResearchPlan,
+)
 
 
 def research_plan_to_xml(plan: ResearchPlan) -> str:
-    """Convert research plan to XML format.
+    """Serialize a `ResearchPlan` into an indented `<research_plan>` XML string.
 
-    The root element is included, and each task is represented as a child element with its attributes.
-    Empty elements are represented with opening and closing tags.
+    Preserves task order with 1-based `index` attributes and preserves
+    `depends_on` order inside `<depends_on>`. Empty containers use explicit
+    opening and closing tags. Element text and attributes are XML-escaped by
+    `ElementTree`.
 
     Args:
-        plan (ResearchPlan): The research plan to convert.
+        plan: Structured research plan to render for scoping or supervisor
+            prompts.
 
     Returns:
-        The XML string representation of the research plan.
+        Indented XML string rooted at `<research_plan>` containing `<tasks>`
+        and `<task>` elements.
     """
-
     root = ElementTree.Element("research_plan")
     tasks_element = ElementTree.SubElement(root, "tasks")
 
@@ -36,15 +53,23 @@ def research_plan_to_xml(plan: ResearchPlan) -> str:
 
 
 def processed_search_results_to_xml(sources: list[ProcessedSearchResult]) -> str:
-    """Convert processed search results to an XML `<sources>` string.
+    """Serialize processed search results into an indented `<sources>` XML string.
+
+    Preserves input order and renders each item as `<source id="...">` with
+    `<url>`, `<title>`, `<summary>`, and optional `<key_excerpts>` (omitted
+    only when `key_excerpts` is `None`).
+
+    Element text and attributes are XML-escaped by `ElementTree`, with no
+    prompt-injection sanitization; callers rely on `<sources>` tags to fence
+    untrusted web content in prompts.
 
     Args:
-        sources: List of ProcessedSearchResult objects to serialize.
+        sources: Processed search results to format for tool output or
+            verification prompts.
 
     Returns:
-        The XML string representation of the sources.
+        Indented XML string rooted at `<sources>` using explicit closing tags.
     """
-
     root = ElementTree.Element("sources")
 
     for source in sources:
@@ -61,15 +86,23 @@ def processed_search_results_to_xml(sources: list[ProcessedSearchResult]) -> str
 
 
 def draft_research_to_xml(research: DraftResearch) -> str:
-    """Convert structured draft research findings to an XML `<draft_research>` string.
+    """Serialize a `DraftResearch` into an indented `<draft_research>` XML string.
+
+    Preserves section, finding, and `source_ids` order, rendering each finding
+    as `<finding id="...">` with `<statement>` and `<source_ids>`. Omits
+    `queries_and_tool_calls` from the output.
+
+    Element text and attributes are XML-escaped by `ElementTree`. Because
+    findings summarize untrusted web sources, callers use `<draft_research>`
+    tags to isolate this content in verification prompts.
 
     Args:
-        research: The DraftResearch object to serialize.
+        research: Compressed research draft with assigned finding IDs.
 
     Returns:
-        The XML string representation of the draft research sections and findings.
+        Indented XML string rooted at `<draft_research>` using explicit
+        closing tags.
     """
-
     root = ElementTree.Element("draft_research")
     sections_element = ElementTree.SubElement(root, "sections")
 
@@ -79,8 +112,9 @@ def draft_research_to_xml(research: DraftResearch) -> str:
 
         findings_element = ElementTree.SubElement(section_element, "findings")
         for finding in section.findings:
-
-            finding_element = ElementTree.SubElement(findings_element, "finding", attrib={"id": finding.id})
+            finding_element = ElementTree.SubElement(
+                findings_element, "finding", attrib={"id": finding.id}
+            )
             ElementTree.SubElement(finding_element, "statement").text = finding.statement
 
             source_ids_element = ElementTree.SubElement(finding_element, "source_ids")
@@ -92,15 +126,22 @@ def draft_research_to_xml(research: DraftResearch) -> str:
 
 
 def final_report_review_to_xml(review: FinalReportReview) -> str:
-    """Convert a FinalReportReview object to an XML string representation.
+    """Serialize a `FinalReportReview` into a `<report_review>` XML string.
+
+    Omits `approved` from the output. When `review.issues` is `None`, returns
+    `"<report_review></report_review>"` with no `<issues>` element; otherwise
+    preserves issue order inside an indented `<issues>` list of `<issue>`
+    elements (`<section>`, `<description>`, `<fix_suggestion>`).
+
+    Element text is XML-escaped by `ElementTree` for insertion into writer
+    revision prompts.
 
     Args:
-        review: The FinalReportReview object to serialize.
+        review: Reviewer output containing any identified report issues.
 
     Returns:
-        The XML string representation of the final report review.
+        XML string rooted at `<report_review>` using explicit closing tags.
     """
-
     root = ElementTree.Element("report_review")
     if review.issues is None:
         return ElementTree.tostring(root, encoding="unicode", short_empty_elements=False)

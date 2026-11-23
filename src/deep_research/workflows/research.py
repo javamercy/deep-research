@@ -1,3 +1,5 @@
+"""Researcher sub-agent workflow for iterative web search, compression, and verification."""
+
 import logging
 from collections.abc import Mapping, Sequence
 from typing import Literal
@@ -13,6 +15,7 @@ from langchain_core.messages import (
 )
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
+from langgraph.config import get_config
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
@@ -47,23 +50,32 @@ logger = logging.getLogger(__name__)
 
 
 async def conduct_research(
-        state: ResearcherState, runtime: Runtime[Configuration], config: RunnableConfig, *, tools: list[BaseTool],
+    state: ResearcherState,
+    runtime: Runtime[Configuration],
+    *,
+    tools: list[BaseTool],
 ) -> Command[Literal["researcher_tools", "compress_research"]]:
-    """Analyze current state and decide on next actions.
+    """Decide whether to call research tools or compress gathered findings.
 
-    The model analyzes the current conversation state and decides whether to:
-    1. Invoke a tool for further research (goto "researcher_tools").
-    2. Compress the research findings into a structured draft (goto "compress_research").
+    Reads `researcher_tool_calls` and `researcher_messages` from state, and
+    requires `configurable.thread_id` in the runnable config to tag the
+    OpenRouter session. Routes directly to `compress_research` without invoking
+    the model once `researcher_tool_calls` reaches
+    `max_researcher_tool_calls`.
+
+    Otherwise invokes `researcher_llm_config` bound to `tools`, appends the
+    returned `AIMessage` to `researcher_messages` (via the `add_messages`
+    reducer), and routes to `researcher_tools` when tool calls are emitted or
+    `compress_research` when the model stops searching.
 
     Args:
-        state (ResearcherState): The current state of the researcher, including messages and tool calls.
-        config (RunnableConfig): The configuration for the runnable, including model settings.
-        tools (list[BaseTool]): The list of tools available for the researcher to use.
+        tools: Tools bound to the researcher model for gathering evidence.
 
     Returns:
-        Command indicating the next node to go to and any state updates.
+        `Command` targeting `"researcher_tools"` or `"compress_research"`,
+        updating `researcher_messages` when the model is invoked.
     """
-
+    config = get_config()
     configuration = Configuration.from_runtime(runtime, config)
     session_id = get_session_id(config)
 
@@ -71,7 +83,8 @@ async def conduct_research(
         return Command(goto="compress_research")
 
     model_with_tools = init_openrouter_model(
-        llm_config=configuration.researcher_llm_config, session_id=session_id,
+        llm_config=configuration.researcher_llm_config,
+        session_id=session_id,
     ).bind_tools(tools)
 
     messages: list[BaseMessage] = [
@@ -87,22 +100,27 @@ async def conduct_research(
 
 
 async def researcher_tools(
-        state: ResearcherState, config: RunnableConfig, *, tool_node: ToolNode
+    state: ResearcherState, config: RunnableConfig, *, tool_node: ToolNode
 ) -> dict:
-    """Execute the tool calls made by the researcher.
+    """Execute researcher tool calls and update the tool-call counter.
 
-    This node executes the tool calls made by the researcher in the previous step.
-    It updates the state with the results of the tool executions and increments the count of tool calls made.
+    Reads `researcher_messages` (requiring the latest message to be an
+    `AIMessage`) and `researcher_tool_calls` from state. Executes the pending
+    calls via `tool_node` and returns the resulting `ToolMessage` updates
+    (appended via `add_messages`) along with the incremented total
+    `researcher_tool_calls` count (plain `int`, no reducer).
 
     Args:
-        state (ResearcherState): The current state of the researcher, including messages and tool calls.
-        config (RunnableConfig): The configuration for the runnable, including model settings.
-        tool_node (ToolNode): The node responsible for executing the tool calls.
+        tool_node: Preconfigured `ToolNode` that runs the researcher's tools.
 
     Returns:
-        Partial state update containing the results of the tool executions and the updated count of tool calls.
-    """
+        Partial state update containing `tool_node` message outputs and the
+        updated `researcher_tool_calls` total.
 
+    Raises:
+        ValueError: If the last message in `researcher_messages` is not an
+            `AIMessage`.
+    """
     last_message = state["researcher_messages"][-1]
     if not isinstance(last_message, AIMessage):
         raise ValueError("Expected an AIMessage before tool execution")
@@ -112,25 +130,25 @@ async def researcher_tools(
     return {
         **result,
         "researcher_tool_calls": (
-                state.get("researcher_tool_calls", 0) + len(last_message.tool_calls)
+            state.get("researcher_tool_calls", 0) + len(last_message.tool_calls)
         ),
     }
 
 
-async def compress_research(state: ResearcherState, runtime: Runtime[Configuration], config: RunnableConfig) -> dict:
-    """Organize and compress research findings into a structured DraftResearch report.
+async def compress_research(state: ResearcherState, runtime: Runtime[Configuration]) -> dict:
+    """Compress the researcher conversation into a structured `DraftResearch`.
 
-    Takes all research messages and tool outputs and extracts structured, source-attributed
-    findings for downstream verification and supervisor decision-making.
-
-    Args:
-        state (ResearcherState): The current state of the researcher, including messages and tool calls.
-        config (RunnableConfig): The configuration for the runnable, including model settings.
+    Reads `researcher_messages` and `research_topic` from state, and requires
+    `configurable.thread_id` in the runnable config for session tagging.
+    Invokes `compression_llm_config` with `DraftResearch` structured output
+    (retried up to `max_structured_output_retries`) and assigns deterministic
+    finding IDs via `_assign_finding_ids`.
 
     Returns:
-        Partial state update containing the structured draft_research.
+        Partial state update setting `draft_research` (validated via
+        `ValidatedLastValue`).
     """
-
+    config = get_config()
     configuration = Configuration.from_runtime(runtime, config)
     session_id = get_session_id(config)
 
@@ -154,21 +172,35 @@ async def compress_research(state: ResearcherState, runtime: Runtime[Configurati
 
 
 async def verify_research(
-        state: ResearcherState, runtime: Runtime[Configuration], config: RunnableConfig,
+    state: ResearcherState,
+    runtime: Runtime[Configuration],
 ) -> dict:
-    """Audit draft research findings against stored sources and format verified citations.
+    """Audit `draft_research` against stored sources and format cited markdown.
 
-    Args:
-        state (ResearcherState): The current state of the researcher, including draft_research and messages.
-        config (RunnableConfig): The configuration for the runnable, including model settings.
+    Reads `draft_research` and `researcher_messages` from state, and requires
+    `configurable.thread_id` in the runnable config to scope store lookups.
+    Collects source IDs from `tavily_search` `ToolMessage` payloads and draft
+    findings, then loads matching `ProcessedSearchResult` records via
+    `get_sources_by_ids`.
+
+    When both `draft_research.sections` and `sources_by_id` are non-empty,
+    invokes `research_verifier_llm_config` with `VerifiedResearch` structured
+    output and applies updates via `_apply_finding_updates`. Otherwise skips
+    LLM verification and leaves `sections` empty so ungrounded findings are
+    omitted. Formats the final markdown via `_format_verified_research`, keeping
+    raw `[<source_id>]` hex tags for downstream synthesis.
 
     Returns:
-        Partial state update containing the formatted compressed_research markdown with citations.
-    """
+        Partial state update setting `compressed_research`.
 
+    Raises:
+        ValueError: If `runtime.store` is `None` or `configurable.thread_id`
+            is missing.
+    """
     if runtime.store is None:
         raise ValueError("Runtime store is not available.")
 
+    config = get_config()
     configuration = Configuration.from_runtime(runtime, config)
     session_id = get_session_id(config)
 
@@ -192,7 +224,9 @@ async def verify_research(
     ]
 
     sources_by_id = await get_sources_by_ids(
-        runtime.store, session_id=session_id, source_ids=[*tool_source_ids, *draft_source_ids],
+        runtime.store,
+        session_id=session_id,
+        source_ids=[*tool_source_ids, *draft_source_ids],
     )
 
     verified_sections: list[ResearchSection] = []
@@ -227,15 +261,11 @@ async def verify_research(
 
 
 def _assign_finding_ids(draft_research: DraftResearch) -> DraftResearch:
-    """Assign deterministic '<section_idx>.<finding_idx>' IDs to all findings in DraftResearch.
+    """Assign deterministic 1-based `<section_idx>.<finding_idx>` IDs to findings.
 
-    Args:
-        draft_research: The compressed DraftResearch report with unassigned finding IDs.
-
-    Returns:
-        Updated DraftResearch with populated finding IDs.
+    Returns a non-mutating copy of `draft_research` preserving section and
+    finding order, populating each `ResearchFinding.id` before verification.
     """
-
     return draft_research.model_copy(
         update={
             "sections": [
@@ -254,19 +284,18 @@ def _assign_finding_ids(draft_research: DraftResearch) -> DraftResearch:
 
 
 def _apply_finding_updates(
-        draft_research: DraftResearch,
-        finding_updates: Sequence[ResearchFindingUpdate],
+    draft_research: DraftResearch,
+    finding_updates: Sequence[ResearchFindingUpdate],
 ) -> list[ResearchSection]:
-    """Apply verification updates and removals to draft research sections.
+    """Apply verifier updates and removals to ID-tagged `draft_research` sections.
 
-    Args:
-        draft_research: The DraftResearch containing sections and ID-tagged findings.
-        finding_updates: Sequence of update or removal operations produced by the verifier.
-
-    Returns:
-        List of verified ResearchSection objects with empty sections omitted.
+    Preserves original section and finding order without mutating
+    `draft_research`. If duplicate updates target the same `finding_id`, the
+    last update wins; updates targeting unknown IDs are logged and ignored.
+    For `"update"` actions, `None` in `statement` or `source_ids` keeps the
+    existing value. Findings with `action == "remove"` and sections left with
+    no findings are omitted from the returned list.
     """
-
     updates_by_id = {update.finding_id: update for update in finding_updates}
     known_ids = {finding.id for section in draft_research.sections for finding in section.findings}
     unknown_ids = updates_by_id.keys() - known_ids
@@ -311,15 +340,12 @@ def _apply_finding_updates(
 
 
 def _extract_source_ids_from_tool_messages(messages: Sequence[str]) -> list[str]:
-    """Parse XML `<sources>` tool messages and extract all `<source id="...">` attributes.
+    """Extract `<source id="...">` attributes from XML tool-message payloads.
 
-    Args:
-        messages: Sequence of XML string payloads from `tavily_search` tool messages.
-
-    Returns:
-        List of extracted 8-character hex source IDs.
+    Preserves encounter order without deduplicating and skips `<source>`
+    elements with missing or empty `id` attributes. Malformed XML payloads (such
+    as tool error messages) are logged and skipped without raising.
     """
-
     source_ids = []
     for message in messages:
         try:
@@ -340,22 +366,21 @@ def _extract_source_ids_from_tool_messages(messages: Sequence[str]) -> list[str]
 
 
 def _format_verified_research(
-        *,
-        queries_and_tool_calls: Sequence[str],
-        sections: Sequence[ResearchSection],
-        sources_by_id: Mapping[str, ProcessedSearchResult],
+    *,
+    queries_and_tool_calls: Sequence[str],
+    sections: Sequence[ResearchSection],
+    sources_by_id: Mapping[str, ProcessedSearchResult],
 ) -> str:
-    """Render verified findings into markdown with source ID citations.
+    """Render verified findings and cited sources as a three-section Markdown report.
 
-    Args:
-        queries_and_tool_calls: Search queries executed during the research session.
-        sections: Verified thematic sections and findings to render.
-        sources_by_id: Mapping of valid source IDs to their ProcessedSearchResult metadata.
-
-    Returns:
-        Formatted markdown string containing queries, cited findings, and a Sources list.
+    Emits `## List of Queries and Tool Calls Made`, `## Fully Comprehensive
+    Findings`, and `### Sources`. Strips whitespace from headings and
+    statements, omits findings with blank statements or no `source_id` present
+    in `sources_by_id`, and omits sections that have no remaining findings.
+    Deduplicates each finding's valid IDs in original order, keeps raw
+    `[<source_id>]` hex brackets inline, and orders `### Sources` entries by
+    first citation appearance across rendered findings.
     """
-
     rendered_sections: list[str] = []
     cited_source_ids: dict[str, None] = {}
 
@@ -402,16 +427,27 @@ def _format_verified_research(
 
 
 def build_researcher_graph(checkpointer: Checkpointer, store: BaseStore | None = None):
-    """Build the research workflow graph with the given checkpointer.
+    """Compile the researcher `StateGraph` (`ResearcherInputState` -> `ResearcherOutputState`).
+
+    Uses `ResearcherState` internally with `Configuration` as `context_schema`.
+    Fixed edges connect `START -> conduct_research`, `researcher_tools ->
+    conduct_research`, `compress_research -> verify_research`, and
+    `verify_research -> END`, while `conduct_research` handles routing between
+    `"researcher_tools"` (running `tavily_search` in a `ToolNode` with
+    `handle_tool_errors=True`) and `"compress_research"`.
+
+    `checkpointer` may be `None` when invoked as a sub-agent or in LangGraph
+    Studio. Although `store` defaults to `None` for Studio/sub-agent wiring, a
+    `BaseStore` must be provided at compile time or via the parent runtime so
+    `tavily_search` and `verify_research` can access session sources.
 
     Args:
-        checkpointer (Checkpointer): The checkpointer to use for the graph.
-        store (BaseStore): The store to use for the graph.
+        checkpointer: Checkpointer for graph state persistence, or `None`.
+        store: Optional `BaseStore` for session-scoped search source caching.
 
     Returns:
-        The compiled research workflow graph.
+        Compiled researcher workflow graph.
     """
-
     tools: list[BaseTool] = [tavily_search]
 
     tool_node = ToolNode(
@@ -419,9 +455,10 @@ def build_researcher_graph(checkpointer: Checkpointer, store: BaseStore | None =
     )
 
     async def conduct_research_node(
-            state: ResearcherState, runtime: Runtime[Configuration], config: RunnableConfig,
+        state: ResearcherState,
+        runtime: Runtime[Configuration],
     ) -> Command[Literal["researcher_tools", "compress_research"]]:
-        return await conduct_research(state, runtime, config, tools=tools)
+        return await conduct_research(state, runtime, tools=tools)
 
     async def researcher_tools_node(state: ResearcherState, config: RunnableConfig) -> dict:
         return await researcher_tools(

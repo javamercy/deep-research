@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from deep-research!")
+"""Multi-agent deep research package built on LangGraph."""

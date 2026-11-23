@@ -10,7 +10,7 @@ def create_final_report_spec() -> EvalSpec:
         model=LLMModel.DEEPSEEK_V4_FLASH,
         max_output_tokens=8192,
         temperature=0.1,
-        reasoning_effort="high"
+        reasoning_effort="high",
     )
 
     return EvalSpec(
@@ -19,5 +19,5 @@ def create_final_report_spec() -> EvalSpec:
         dataset_name=DATASET_NAME,
         target=final_report_target,
         evaluators=create_final_report_evaluators(judge_config),
-        experiment_prefix="final_report"
+        experiment_prefix="final_report",
     )

@@ -11,5 +11,5 @@ def create_research_spec() -> EvalSpec:
         dataset_name=DATASET_NAME,
         evaluators=create_research_evaluators(),
         target=research_target,
-        experiment_prefix="research"
+        experiment_prefix="research",
     )

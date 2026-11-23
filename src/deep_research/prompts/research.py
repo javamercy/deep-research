@@ -1,3 +1,28 @@
+"""Prompt templates for search summarization and the research workflow.
+
+Templates are formatted with `str.format(...)` by `deep_research.search.processing`
+and nodes in `deep_research.workflows.research`:
+
+- `SUMMARIZE_WEBPAGE_SYSTEM_PROMPT`: Instructs webpage summarization for
+  downstream researchers. Requires `{date}`. Paired with `ContentSummary`.
+- `SUMMARIZE_WEBPAGE_USER_PROMPT`: Wraps raw webpage text in `<webpage_content>`.
+  Requires `{webpage_content}`.
+- `RESEARCHER_SYSTEM_PROMPT`: Instructs iterative web research in a tool-calling
+  loop. Requires `{date}`. Bound to the `tavily_search` tool.
+- `COMPRESS_SYSTEM_PROMPT`: Instructs organizing `tavily_search` `<sources>`
+  outputs into structured findings without inline citation brackets. Requires
+  `{date}`. Paired with `DraftResearch` (8-character hex `source_ids` matching
+  `<source id="...">`).
+- `COMPRESS_USER_PROMPT`: Supplies `<research_topic>` after the researcher's
+  conversation messages. Requires `{research_topic}`.
+- `VERIFY_RESEARCH_SYSTEM_PROMPT`: Instructs auditing `<draft_research>`
+  findings against stored `<sources>` and emitting only needed updates or
+  removals without inline citation brackets. Requires `{date}`. Paired with
+  `VerifiedResearch`.
+- `VERIFY_RESEARCH_USER_PROMPT`: Supplies serialized `<draft_research>` and
+  `<sources>` XML for verification. Requires `{draft_research}` and `{sources}`.
+"""
+
 from typing import Final
 
 SUMMARIZE_WEBPAGE_SYSTEM_PROMPT = """
@@ -36,7 +61,7 @@ Example 1 (for a news article):
 
 Example 2 (for a scientific article):
 "summary": "A new study published in Nature Climate Change reveals that global sea levels are rising faster than previously thought. Researchers analyzed satellite data from 1993 to 2022 and found that the rate of sea-level rise has accelerated by 0.08 mm/year² over the past three decades. This acceleration is primarily attributed to melting ice sheets in Greenland and Antarctica. The study projects that if current trends continue, global sea levels could rise by up to 2 meters by 2100, posing significant risks to coastal communities worldwide.",
-"key_excerpts": "Our findings indicate a clear acceleration in sea-level rise, which has significant implications for coastal planning and adaptation strategies, lead author Dr. Emily Brown stated. The rate of ice sheet melt in Greenland and Antarctica has tripled since the 1990s, the study reports. Without immediate and substantial reductions in greenhouse gas emissions, we are looking at potentially catastrophic sea-level rise by the end of this century, warned co-author Professor Michael Green."  
+"key_excerpts": "Our findings indicate a clear acceleration in sea-level rise, which has significant implications for coastal planning and adaptation strategies, lead author Dr. Emily Brown stated. The rate of ice sheet melt in Greenland and Antarctica has tripled since the 1990s, the study reports. Without immediate and substantial reductions in greenhouse gas emissions, we are looking at potentially catastrophic sea-level rise by the end of this century, warned co-author Professor Michael Green."
 </examples>
 
 <critical_reminder>
@@ -95,7 +120,7 @@ You are a research assistant that has conducted research on a topic by calling s
 </role>
 
 <task>
-Clean and organize the research findings collected from tool calls and web searches into a comprehensive, well-structured, source-backed <draft_research> report that addresses RESEARCH TOPIC. Your output will first be audited by a verification agent against the stored sources and then used by a downstream writer agent to generate a final report. 
+Clean and organize the research findings collected from tool calls and web searches into a comprehensive, well-structured, source-backed <draft_research> report that addresses RESEARCH TOPIC. Your output will first be audited by a verification agent against the stored sources and then used by a downstream writer agent to generate a final report.
 </task>
 
 <tool_call_filtering>

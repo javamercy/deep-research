@@ -1,3 +1,12 @@
+"""Compiled graph entry points exported at import time for LangGraph Studio.
+
+Each graph listed in `langgraph.json` is built and compiled at import time with
+`checkpointer=None` and `store=None` (no LLM or network calls occur on import).
+LangGraph Studio replaces these with managed persistence at runtime; invoking
+graphs directly from this module without injecting a checkpointer (for
+interrupts) or store (for source persistence) will fail at runtime.
+"""
+
 from deep_research.workflows.deep_research import build_deep_research_graph
 from deep_research.workflows.research import build_researcher_graph
 from deep_research.workflows.scoping import build_scoping_graph

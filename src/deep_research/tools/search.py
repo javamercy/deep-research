@@ -23,16 +23,18 @@ _SOURCE_LOCKS: WeakValueDictionary[tuple[str, str], asyncio.Lock] = WeakValueDic
 
 
 def _get_source_lock(session_id: str, source_id: str) -> asyncio.Lock:
-    """Get or create an in-memory asyncio.Lock scoped to a session and source ID.
+    """Return the shared `asyncio.Lock` for a `(session_id, source_id)` pair.
+
+    Looks up or creates a lock in the module-level `WeakValueDictionary`, so
+    unused entries are automatically reclaimed once all holders release them.
 
     Args:
-        session_id: Unique identifier for the current research session.
-        source_id: The 8-character hex ID of the search result.
+        session_id: Research session identifier.
+        source_id: Deterministic 8-character hex source identifier.
 
     Returns:
-        The shared asyncio.Lock instance for the (session_id, source_id) pair.
+        The `asyncio.Lock` coordinating concurrent processing of that source.
     """
-
     key = (session_id, source_id)
     lock = _SOURCE_LOCKS.get(key)
     if lock is None:
@@ -43,27 +45,32 @@ def _get_source_lock(session_id: str, source_id: str) -> asyncio.Lock:
 
 
 async def _get_or_process_source(
-        store: BaseStore,
-        result: TavilySearchResult,
-        *,
-        session_id: str,
-        summarization_model: Runnable[LanguageModelInput, ContentSummary],
-        max_content_length: int,
-        config: RunnableConfig | None = None
+    store: BaseStore,
+    result: TavilySearchResult,
+    *,
+    session_id: str,
+    summarization_model: Runnable[LanguageModelInput, ContentSummary],
+    max_content_length: int,
+    config: RunnableConfig | None = None,
 ) -> ProcessedSearchResult:
-    """Retrieve an existing processed source from the store or summarize and store it under a lock.
+    """Return a cached processed source or summarize and persist it under a lock.
+
+    Acquires the per-`(session_id, result.id)` lock so concurrent searches for
+    the same URL do not summarize it multiple times. On a cache hit in `store`,
+    returns the stored `ProcessedSearchResult`; otherwise runs
+    `process_search_result`, persists it with `store_source`, and returns it.
 
     Args:
-        store: The LangGraph BaseStore instance.
-        result: Raw TavilySearchResult to look up or process.
-        session_id: Unique identifier for the current research session.
-        summarization_model: Structured model runnable for summarizing raw webpage content.
-        max_content_length: Maximum character length of raw content to pass to the summarizer.
+        store: LangGraph store holding session sources.
+        result: Raw Tavily search result to fetch or process.
+        session_id: Research session identifier scoping the store and lock.
+        summarization_model: Structured model runnable returning `ContentSummary`.
+        max_content_length: Maximum raw character count sent to the summarizer.
+        config: Optional LangChain runnable configuration forwarded to the model.
 
     Returns:
-        The cached or newly summarized ProcessedSearchResult.
+        The cached or newly processed `ProcessedSearchResult`.
     """
-
     lock = _get_source_lock(session_id, result.id)
     async with lock:
         existing = await get_source_by_id(store, session_id=session_id, source_id=result.id)
@@ -74,7 +81,7 @@ async def _get_or_process_source(
             result,
             summarization_model=summarization_model,
             max_content_length=max_content_length,
-            config=config
+            config=config,
         )
         await store_source(store, processed_result, session_id=session_id)
         return processed_result
@@ -82,23 +89,31 @@ async def _get_or_process_source(
 
 @tool(parse_docstring=True)
 async def tavily_search(
-        query: str,
-        runtime: ToolRuntime[Configuration],
-        max_results: Annotated[int, InjectedToolArg] = 5,
-        topic: Annotated[Literal["general", "news", "finance"], InjectedToolArg] = "general",
+    query: str,
+    runtime: ToolRuntime[Configuration],
+    max_results: Annotated[int, InjectedToolArg] = 5,
+    topic: Annotated[Literal["general", "news", "finance"], InjectedToolArg] = "general",
 ) -> str:
-    """Perform a search using the Tavily API and return formatted results.
+    """Search the web and return summarized sources with citation IDs.
+
+    Use one focused search query per call—start broad for initial exploration
+    and follow up with narrower queries to fill specific gaps. Each result is
+    returned as a `<source id="...">` entry with its URL, title, summary, and
+    optional key excerpts.
 
     Args:
-        query: The search query string
-        runtime: ToolRuntime object providing context for the tool execution
-        max_results: Maximum number of results to return (default: 5)
-        topic: Topic filter for search results (default: "general")
+        query: A targeted web search query string.
+        runtime: Injected execution context; hidden from the model.
+        max_results: Injected limit on results returned per call; hidden from the model.
+        topic: Injected Tavily topic category; hidden from the model.
 
     Returns:
-        Formatted string of search results with summaries
-    """
+        XML `<sources>` string containing deduplicated `ProcessedSearchResult` entries.
 
+    Raises:
+        ValueError: If `runtime.store` is `None`, `thread_id` is missing from config,
+            or `TAVILY_API_KEY` is unset.
+    """
     if runtime.store is None:
         raise ValueError("ToolRuntime store is not available.")
 
@@ -127,7 +142,7 @@ async def tavily_search(
                 session_id=session_id,
                 summarization_model=summarization_model,
                 max_content_length=configuration.max_content_length,
-                config=runtime.config
+                config=runtime.config,
             )
             for search_result in search_results
         )
