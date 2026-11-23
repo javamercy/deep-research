@@ -1,9 +1,8 @@
 """Supervisor workflow for coordinating research delegation and plan progress."""
 
-import asyncio
 import logging
 from collections.abc import Sequence
-from typing import Literal, cast
+from typing import Literal, cast, TypedDict
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolCall, ToolMessage
 from langchain_core.runnables import RunnableConfig
@@ -12,7 +11,7 @@ from langgraph.constants import START
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 from langgraph.store.base import BaseStore
-from langgraph.types import Checkpointer, Command
+from langgraph.types import Checkpointer, Command, Send
 from pydantic import BaseModel
 
 from deep_research.configuration import Configuration, get_session_id
@@ -36,6 +35,14 @@ from deep_research.utils import get_today_str
 from deep_research.workflows.research import build_researcher_graph
 
 logger = logging.getLogger(__name__)
+
+
+class _ResearchTaskInput(TypedDict):
+    """Per-task payload sent from `supervisor_tools` to `run_researcher` via `Send`."""
+
+    research_topic: str
+    tool_call_id: str
+    tool_name: str
 
 
 async def supervisor(
@@ -100,29 +107,27 @@ async def supervisor(
 async def supervisor_tools(
     state: SupervisorState, config: RunnableConfig
 ) -> Command[Literal["supervisor", "__end__"]]:
-    """Execute the supervisor's plan updates, researcher delegations, and completion signals.
+    """Process the supervisor's plan updates, researcher delegations, and completion signal.
 
     Reads the trailing `AIMessage` from `supervisor_messages` and the current
-    `research_plan` from state. Applies any `UpdateResearchPlan` task status updates first.
-    Unless `ResearchComplete` was also called, runs each `ConductResearch` call concurrently
-    via `build_researcher_graph(checkpointer=None)` and `asyncio.gather` (passing `config`
-    so runtime configuration and `BaseStore` propagate; `max_concurrent_research_threads`
-    is not enforced).
+    `research_plan` from state. Applies any `UpdateResearchPlan` task status updates first
+    and records their `ToolMessage` acknowledgements. Unless `ResearchComplete` was also
+    called, dispatches each `ConductResearch` call to `run_researcher` via `Send`
+    (`max_concurrent_research_threads` is not enforced).
 
-    Because `supervisor_messages` uses `add_messages` and `compressed_researches` uses
-    `operator.add`, only new `ToolMessage` entries and newly gathered
-    `(research_topic, compressed_research)` pairs are returned, while `research_plan`
-    replaces the prior plan.
+    Because `supervisor_messages` uses `add_messages`, only the new `ToolMessage` entries
+    are returned, while `research_plan` replaces the prior plan.
 
     Returns:
-        A `Command` routing to `__end__` with updated `research_plan` and
-        `compressed_researches` when `ResearchComplete` is present (skipping any
-        `ConductResearch` calls), or back to `supervisor` with `supervisor_messages`,
-        `research_plan`, and `compressed_researches`.
+        A `Command` routing to `__end__` with updated `research_plan` when
+        `ResearchComplete` is present (skipping any `ConductResearch` calls), to a list of
+        `Send("run_researcher", ...)` tasks with `research_plan` and `supervisor_messages`
+        when `ConductResearch` calls are present, or back to `supervisor` with
+        `research_plan` and `supervisor_messages`.
 
     Raises:
-        Exception: Logs and re-raises any error during tool-call validation or
-            researcher execution.
+        Exception: Logs and re-raises any error during tool-call parsing or task-update
+            validation.
     """
     # TODO: Exception handling for tool execution failures, including logging and fallback strategies
 
@@ -133,7 +138,6 @@ async def supervisor_tools(
     research_complete = any(call["name"] == "ResearchComplete" for call in tool_calls)
 
     tool_messages: list[ToolMessage] = []
-    compressed_researches: list[tuple[str, str]] = []
 
     try:
         update_plan_calls, conduct_research_calls = _extract_tool_calls_from_supervisor_message(
@@ -155,37 +159,31 @@ async def supervisor_tools(
 
         research_plan = _apply_task_updates(state["research_plan"], all_updates)
 
-        if not research_complete and conduct_research_calls:
-            researcher_agent = build_researcher_graph(checkpointer=None)
+        if research_complete:
+            return Command(
+                goto="__end__",
+                update={"research_plan": research_plan},
+            )
 
-            threads = []
-            for tool_call in conduct_research_calls:
-                input_state = ResearcherInputState(
-                    researcher_messages=[HumanMessage(content=tool_call["args"]["research_topic"])],
-                    research_topic=tool_call["args"]["research_topic"],
-                )
-
-                # pyrefly: ignore [no-matching-overload]
-                thread = researcher_agent.ainvoke(input_state, config=config)
-                threads.append(thread)
-
-            # TODO: Max concurrent research threads should be enforced here.
-            researcher_outputs = await asyncio.gather(*threads)
-
-            for output, tool_call in zip(researcher_outputs, conduct_research_calls, strict=True):
-                compressed_research = output.get(
-                    "compressed_research", "Error occurred in researcher agent"
-                )
-                compressed_researches.append(
-                    (tool_call["args"]["research_topic"], compressed_research)
-                )
-                tool_messages.append(
-                    ToolMessage(
-                        content=compressed_research,
-                        name=tool_call["name"],  # ConductResearch
+        if conduct_research_calls:
+            sends = [
+                Send(
+                    "run_researcher",
+                    _ResearchTaskInput(
+                        research_topic=tool_call["args"]["research_topic"],
                         tool_call_id=tool_call["id"],
-                    )
+                        tool_name=tool_call["name"],
+                    ),
                 )
+                for tool_call in conduct_research_calls
+            ]
+            return Command(
+                goto=sends,
+                update={
+                    "research_plan": research_plan,
+                    "supervisor_messages": tool_messages,
+                },
+            )
 
     except Exception as e:
         logger.error(f"Error during supervisor tool execution {e}")
@@ -194,10 +192,7 @@ async def supervisor_tools(
     if research_complete:
         return Command(
             goto="__end__",
-            update={
-                "compressed_researches": compressed_researches,
-                "research_plan": research_plan,
-            },
+            update={"research_plan": research_plan},
         )
 
     return Command(
@@ -205,7 +200,6 @@ async def supervisor_tools(
         update={
             "research_plan": research_plan,
             "supervisor_messages": tool_messages,
-            "compressed_researches": compressed_researches,
         },
     )
 
@@ -259,18 +253,19 @@ def build_supervisor_graph(checkpointer: Checkpointer, store: BaseStore | None =
     """Build and compile the supervisor workflow graph.
 
     Uses `SupervisorState` internally with `SupervisorInputState` as input,
-    `SupervisorOutputState` as output, and `Configuration` as context schema. Binds
-    `ConductResearch`, `UpdateResearchPlan`, and `ResearchComplete` to the `supervisor`
-    node. Declares a single fixed edge from `START` to `supervisor`; all subsequent
-    transitions and termination are driven by `Command` returns in `supervisor` and
-    `supervisor_tools`.
+    `SupervisorOutputState` as output, and `Configuration` as context schema. Compiles
+    `build_researcher_graph(checkpointer=None, store=store)` for the `run_researcher`
+    node and binds `ConductResearch`, `UpdateResearchPlan`, and `ResearchComplete` to
+    `supervisor`. Fixed edges connect `START` to `supervisor` and `run_researcher` back
+    to `supervisor`; `supervisor` and `supervisor_tools` drive dynamic routing (including
+    `Send` fan-out to `run_researcher`) and termination via `Command`.
 
     Args:
         checkpointer: Checkpointer for state persistence, or `None` when supplied by the
             runtime.
-        store: Store passed to the compiled graph, or `None` when supplied by the
-            runtime (such as LangGraph Studio). A `BaseStore` is required at execution time
-            for researcher subgraphs.
+        store: Store passed to the compiled graph and researcher subgraph, or `None` when
+            supplied by the runtime (such as LangGraph Studio). A `BaseStore` is required
+            at execution time for researcher subgraphs.
 
     Returns:
         The compiled supervisor workflow graph.
@@ -280,12 +275,53 @@ def build_supervisor_graph(checkpointer: Checkpointer, store: BaseStore | None =
         UpdateResearchPlan,
         ResearchComplete,
     ]
+    researcher_graph = build_researcher_graph(checkpointer=None, store=store)
 
     async def supervisor_node(
         state: SupervisorState,
         runtime: Runtime[Configuration],
     ) -> Command[Literal["supervisor_tools", "__end__"]]:
         return await supervisor(state, runtime, tools)
+
+    async def run_researcher_node(
+        task_input: _ResearchTaskInput,
+        config: RunnableConfig,
+    ) -> dict:
+        """Execute a single delegated research task via `researcher_graph`.
+
+        Invoked per `Send` from `supervisor_tools` with `task_input`, forwarding `config`
+        so runtime configuration and `BaseStore` propagate to the subgraph. Falls back to
+        an error string if `compressed_research` is absent from the subgraph output.
+
+        Because `compressed_researches` uses `operator.add` and `supervisor_messages` uses
+        `add_messages`, only the single `(research_topic, compressed_research)` tuple and
+        matching `ToolMessage` for `task_input["tool_call_id"]` are returned.
+
+        Args:
+            task_input: Per-task delegation payload from `supervisor_tools`.
+
+        Returns:
+            A partial state update appending the result to `compressed_researches` and
+            its `ToolMessage` observation to `supervisor_messages`.
+        """
+        state = ResearcherInputState(
+            researcher_messages=[HumanMessage(content=task_input["research_topic"])],
+            research_topic=task_input["research_topic"],
+        )
+        output = await researcher_graph.ainvoke(state, config=config)
+        compressed_research = output.get(
+            "compressed_research", "Error occurred in researcher agent"
+        )
+        return {
+            "compressed_researches": [(state["research_topic"], compressed_research)],
+            "supervisor_messages": [
+                ToolMessage(
+                    content=compressed_research,
+                    name=task_input["tool_name"],
+                    tool_call_id=task_input["tool_call_id"],
+                )
+            ],
+        }
 
     # pyrefly: ignore [bad-specialization]
     builder = StateGraph(
@@ -299,7 +335,9 @@ def build_supervisor_graph(checkpointer: Checkpointer, store: BaseStore | None =
 
     builder.add_node("supervisor", supervisor_node)
     builder.add_node("supervisor_tools", supervisor_tools)
+    builder.add_node("run_researcher", run_researcher_node)
 
     builder.add_edge(START, "supervisor")
+    builder.add_edge("run_researcher", "supervisor")
 
     return builder.compile(checkpointer=checkpointer, store=store)
