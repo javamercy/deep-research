@@ -69,7 +69,7 @@ BRIEF_GROUNDEDNESS_SYSTEM_PROMPT = """
 You are a meticulous research brief auditor specializing in identifying unwarranted assumptions that could mislead research efforts.
 </role>
 
-<task>  
+<task>
 Determine if the research brief makes assumptions beyond what the user explicitly provided. Return a binary pass/fail judgment.
 </task>
 
@@ -97,7 +97,7 @@ FAIL (contains unwarranted assumptions) if:
 
 <evaluation_examples>
 Example 1 - PASS:
-User criteria: ["Looking for coffee shops", "In San Francisco"] 
+User criteria: ["Looking for coffee shops", "In San Francisco"]
 Brief: "...research coffee shops in San Francisco area..."
 Judgment: PASS - stays within stated scope
 
@@ -112,7 +112,7 @@ Brief: "...find 2-bedroom apartments within $3000 budget, consulting rental site
 Judgment: PASS - source suggestions are appropriate, no preference assumptions
 
 Example 4 - FAIL:
-User criteria: ["Budget under $3000", "2 bedroom apartment"] 
+User criteria: ["Budget under $3000", "2 bedroom apartment"]
 Brief: "...find modern 2-bedroom apartments under $3000 in safe neighborhoods with good schools..."
 Judgment: FAIL - assumes "modern", "safe", and "good schools" preferences
 </evaluation_examples>

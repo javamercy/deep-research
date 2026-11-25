@@ -85,9 +85,6 @@ class Configuration(FrozenBaseModel):
         max_structured_output_retries: Retry attempts for structured LLM calls.
         allow_clarification: Whether scoping may pause to ask the user a
             clarifying question.
-        allow_collaborative_planning: Whether scoping pauses for user plan
-            review and revision.
-        max_planning_iterations: Maximum planning revisions before proceeding.
         max_concurrent_research_threads: Concurrency limit advertised to the
             supervisor prompt.
         max_supervisor_iterations: Maximum supervisor delegation turns.
@@ -97,6 +94,7 @@ class Configuration(FrozenBaseModel):
             summarization.
         scoping_llm_config: Model settings for clarification, brief, and plan
             nodes.
+        recon_queries_llm_config: Model settings for `create_recon_queries`.
         researcher_llm_config: Model settings for `conduct_research`.
         summarization_llm_config: Model settings for webpage summarization in
             `tavily_search`.
@@ -109,8 +107,6 @@ class Configuration(FrozenBaseModel):
 
     max_structured_output_retries: int = 3
     allow_clarification: bool = True
-    allow_collaborative_planning: bool = True
-    max_planning_iterations: int = 3
     max_concurrent_research_threads: int = 5
     max_supervisor_iterations: int = 5
     max_researcher_tool_calls: int = 3
@@ -120,6 +116,11 @@ class Configuration(FrozenBaseModel):
     scoping_llm_config: LLMModelConfig = LLMModelConfig(
         model=LLMModel.DEEPSEEK_V4_1_FLASH,
         reasoning_effort="high",
+        max_output_tokens=32_000,
+    )
+    recon_queries_llm_config: LLMModelConfig = LLMModelConfig(
+        model=LLMModel.DEEPSEEK_V4_1_FLASH,
+        reasoning_effort="low",
         max_output_tokens=32_000,
     )
     researcher_llm_config: LLMModelConfig = LLMModelConfig(

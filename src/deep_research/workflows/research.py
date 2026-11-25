@@ -467,13 +467,14 @@ def build_researcher_graph(checkpointer: Checkpointer, store: BaseStore | None =
             tool_node=tool_node,
         )
 
+    # Pyrefly does not recognize TypedDict schemas as satisfying LangGraph's StateLike bound.
     # pyrefly: ignore [bad-specialization]
-    builder = StateGraph(
+    builder = StateGraph[
+        ResearcherState, Configuration, ResearcherInputState, ResearcherOutputState
+    ](
         ResearcherState,
         context_schema=Configuration,
-        # pyrefly: ignore [bad-argument-type]
         input_schema=ResearcherInputState,
-        # pyrefly: ignore [bad-argument-type]
         output_schema=ResearcherOutputState,
     )
 

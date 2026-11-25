@@ -1,4 +1,5 @@
-from langchain_core.language_models import LanguageModelInput
+from typing import TYPE_CHECKING
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import EvaluationResult
 from langsmith.schemas import Run
@@ -21,6 +22,9 @@ from evals.scoping.schemas import (
     PlanAdequacyEvaluation,
 )
 from evals.types import EvaluatorFunc
+
+if TYPE_CHECKING:
+    from langchain_core.language_models import LanguageModelInput
 
 
 def create_research_brief_evaluators(judge_config: LLMModelConfig) -> list[EvaluatorFunc]:

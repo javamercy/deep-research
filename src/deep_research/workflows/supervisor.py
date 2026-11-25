@@ -2,7 +2,7 @@
 
 import logging
 from collections.abc import Sequence
-from typing import Literal, cast, TypedDict
+from typing import Literal, TypedDict, cast
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolCall, ToolMessage
 from langchain_core.runnables import RunnableConfig
@@ -171,7 +171,7 @@ async def supervisor_tools(
                     "run_researcher",
                     _ResearchTaskInput(
                         research_topic=tool_call["args"]["research_topic"],
-                        tool_call_id=tool_call["id"],
+                        tool_call_id=tool_call["id"] or "",
                         tool_name=tool_call["name"],
                     ),
                 )
@@ -335,7 +335,9 @@ def build_supervisor_graph(checkpointer: Checkpointer, store: BaseStore | None =
 
     builder.add_node("supervisor", supervisor_node)
     builder.add_node("supervisor_tools", supervisor_tools)
-    builder.add_node("run_researcher", run_researcher_node)
+    # LangGraph infers the Send payload schema from the node annotation at runtime.
+    # Pyrefly checks the node against SupervisorState instead.
+    builder.add_node("run_researcher", run_researcher_node)  # pyrefly: ignore [bad-argument-type]
 
     builder.add_edge(START, "supervisor")
     builder.add_edge("run_researcher", "supervisor")

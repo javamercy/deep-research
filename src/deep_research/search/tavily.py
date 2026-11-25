@@ -1,3 +1,4 @@
+import asyncio
 import os
 from functools import lru_cache
 from hashlib import sha256
@@ -30,12 +31,71 @@ def _get_tavily_client() -> AsyncTavilyClient:
     return AsyncTavilyClient(api_key=api_key)
 
 
+async def search_tavily_multiple(
+    queries: list[str],
+    *,
+    max_results: int = 5,
+    topic: Literal["general", "news", "finance"] = "general",
+    include_raw_content: bool = True,
+    search_depth: Literal["ultra-fast", "fast", "basic", "advanced"] = "basic",
+) -> list[TavilySearchResult]:
+    """Query the Tavily Search API concurrently across multiple queries.
+
+    Executes `client.search` in parallel for each query with
+    `include_images=False`, silently skipping queries that raise an exception
+    or return `results=None`. Merges results in query order, deduplicates by
+    normalized URL (keeping the first occurrence), and assigns each result a
+    deterministic 8-character hex ID.
+
+    Args:
+        queries: Search query strings to run concurrently.
+        max_results: Maximum number of results requested per query from Tavily.
+        topic: Tavily search topic category.
+        include_raw_content: Whether to request raw webpage content in results.
+        search_depth: Tavily search depth preset.
+
+    Returns:
+        Deduplicated `TavilySearchResult` items merged across all queries.
+
+    Raises:
+        ValueError: If the `TAVILY_API_KEY` environment variable is unset or empty.
+    """
+    client = _get_tavily_client()
+    responses: list[dict | BaseException] = await asyncio.gather(
+        *[
+            client.search(
+                query=query,
+                max_results=max_results,
+                topic=topic,
+                include_raw_content=include_raw_content,
+                search_depth=search_depth,
+                include_images=False,
+            )
+            for query in queries
+        ],
+        return_exceptions=True,
+    )
+
+    search_results: list[dict] = []
+    for response in responses:
+        if isinstance(response, BaseException):
+            # Log the exception or handle it as needed
+            continue
+
+        results: list[dict] | None = response.get("results")
+        if results is not None:
+            search_results.extend(results)
+
+    return _deduplicate_and_map_search_results(search_results)
+
+
 async def search_tavily(
     query: str,
     *,
     max_results: int = 5,
     topic: Literal["general", "news", "finance"] = "general",
     include_raw_content: bool = True,
+    search_depth: Literal["ultra-fast", "fast", "basic", "advanced"] = "basic",
 ) -> list[TavilySearchResult]:
     """Query the Tavily Search API and return URL-deduplicated results.
 
@@ -48,6 +108,7 @@ async def search_tavily(
         max_results: Maximum number of results requested from Tavily.
         topic: Tavily search topic category.
         include_raw_content: Whether to request raw webpage content in results.
+        search_depth: Tavily search depth preset.
 
     Returns:
         Deduplicated `TavilySearchResult` items in Tavily's original rank order.
@@ -61,6 +122,7 @@ async def search_tavily(
         max_results=max_results,
         topic=topic,
         include_raw_content=include_raw_content,
+        search_depth=search_depth,
         include_images=False,
     )
 

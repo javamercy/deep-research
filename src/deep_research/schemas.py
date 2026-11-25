@@ -66,6 +66,23 @@ class ResearchQuestion(FrozenBaseModel):
     )
 
 
+class ReconQueries(FrozenBaseModel):
+    """Pre-planning reconnaissance search queries to map the research landscape.
+
+    Return 0 to 3 distinct, non-overlapping search queries that ground current
+    entities, options, domain criteria, or caveats before planning, or an empty
+    list when reconnaissance is unnecessary.
+    """
+
+    queries: list[str] = Field(
+        max_length=3,
+        description=(
+            "0 to 3 concise, keyword-focused web search queries (roughly 5-10 words each) "
+            "in the target language. Return an empty list if reconnaissance adds no planning value."
+        ),
+    )
+
+
 class ResearchTask(FrozenBaseModel):
     """Single investigative task within a research plan.
 
@@ -96,23 +113,6 @@ class ResearchPlan(FrozenBaseModel):
 
     tasks: list[ResearchTask] = Field(
         description="A list of research tasks that will be executed to achieve the research.",
-    )
-
-
-class ResearchPlanReview(FrozenBaseModel):
-    """Human or caller resume payload reviewing a proposed research plan.
-
-    Passed as `response_schema` to `interrupt()` in `review_plan`. Setting
-    `approved` to false routes back to `create_plan` with `feedback` unless
-    `max_planning_iterations` has been reached.
-    """
-
-    approved: bool = Field(
-        description="Whether the research plan is approved or not.",
-    )
-    feedback: str = Field(
-        default="",
-        description="Feedback on the research plan. Empty if the plan is approved.",
     )
 
 

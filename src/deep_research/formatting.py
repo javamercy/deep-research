@@ -7,6 +7,7 @@ prompts rely on outer XML tags paired with `<data_boundaries>` instructions to
 isolate untrusted content.
 """
 
+from collections.abc import Sequence
 from xml.etree import ElementTree
 
 from deep_research.schemas import (
@@ -14,7 +15,39 @@ from deep_research.schemas import (
     FinalReportReview,
     ProcessedSearchResult,
     ResearchPlan,
+    TavilySearchResult,
 )
+
+
+def landscape_context_to_xml(results: Sequence[TavilySearchResult]) -> str:
+    """Serialize reconnaissance search hits into an indented `<landscape_context>` XML string.
+
+    Preserves input order and renders each hit as `<result>` with `<title>`,
+    `<url>`, and `<snippet>` (from `TavilySearchResult.content`). Omits `id`,
+    `score`, and `raw_content` so unverified scoping snippets stay distinct from
+    citable `<sources>` persisted in the session store.
+
+    Element text is XML-escaped by `ElementTree`, with no prompt-injection
+    sanitization; callers rely on `<landscape_context>` tags paired with
+    `<data_boundaries>` instructions to isolate untrusted web content.
+
+    Args:
+        results: Deduplicated reconnaissance search hits from Tavily.
+
+    Returns:
+        Indented XML string rooted at `<landscape_context>` using explicit
+        closing tags.
+    """
+    root = ElementTree.Element("landscape_context")
+
+    for result in results:
+        result_element = ElementTree.SubElement(root, "result")
+        ElementTree.SubElement(result_element, "title").text = result.title
+        ElementTree.SubElement(result_element, "url").text = result.url
+        ElementTree.SubElement(result_element, "snippet").text = result.content
+
+    ElementTree.indent(root, space="  ")
+    return ElementTree.tostring(root, encoding="unicode", short_empty_elements=False)
 
 
 def research_plan_to_xml(plan: ResearchPlan) -> str:

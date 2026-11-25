@@ -1,3 +1,5 @@
+from typing import TYPE_CHECKING
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import EvaluationResult
 from langsmith.schemas import Run
@@ -11,6 +13,9 @@ from evals.final_report.prompts import (
 )
 from evals.final_report.schemas import RequirementEvaluation
 from evals.types import EvaluatorFunc
+
+if TYPE_CHECKING:
+    from langchain_core.language_models import LanguageModelInput
 
 
 def create_final_report_evaluators(judge_config: LLMModelConfig) -> list[EvaluatorFunc]:

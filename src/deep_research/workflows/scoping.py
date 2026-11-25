@@ -11,23 +11,26 @@ from langgraph.runtime import Runtime
 from langgraph.types import Checkpointer, Command, interrupt
 
 from deep_research.configuration import Configuration, get_session_id
-from deep_research.formatting import research_plan_to_xml
+from deep_research.formatting import landscape_context_to_xml
 from deep_research.openrouter import init_openrouter_structured_model
 from deep_research.prompts.scoping import (
     CLARIFICATION_SYSTEM_PROMPT,
     CLARIFICATION_USER_PROMPT,
-    RESEARCH_PLANNING_SYSTEM_PROMPT,
-    RESEARCH_PLANNING_USER_PROMPT,
+    CREATE_PLAN_SYSTEM_PROMPT,
+    CREATE_PLAN_USER_PROMPT,
+    RECON_QUERIES_SYSTEM_PROMPT,
+    RECON_QUERIES_USER_PROMPT,
     WRITE_RESEARCH_BRIEF_SYSTEM_PROMPT,
     WRITE_RESEARCH_BRIEF_USER_PROMPT,
 )
 from deep_research.schemas import (
     ClarificationAnswer,
     ClarificationDecision,
+    ReconQueries,
     ResearchPlan,
-    ResearchPlanReview,
     ResearchQuestion,
 )
+from deep_research.search.tavily import search_tavily_multiple
 from deep_research.state import ScopingInputState, ScopingOutputState, ScopingState
 from deep_research.utils import get_today_str
 
@@ -148,27 +151,89 @@ async def write_research_brief(state: ScopingState, runtime: Runtime[Configurati
     return {"research_brief": response.research_brief}
 
 
-async def create_plan(
-    state: ScopingState,
-    runtime: Runtime[Configuration],
-) -> Command[Literal["review_plan", "__end__"]]:
-    """Generate a structured research plan or revise an existing plan from feedback.
+async def create_recon_queries(state: ScopingState, runtime: Runtime[Configuration]) -> dict:
+    """Generate 0 to 3 pre-planning reconnaissance queries from `research_brief`.
 
-    Reads `research_brief` and `planning_iterations` from state; when `research_plan`
-    is already present, also reads `plan_feedback` and appends the serialized plan and
-    feedback to the prompt for revision. Requires `configurable.thread_id` for session
-    tracking.
+    Reads `research_brief` from state and invokes the structured model with
+    `ReconQueries` (capped at 3 queries, retried up to
+    `max_structured_output_retries`). Requires `configurable.thread_id` for
+    session tracking.
 
     Returns:
-        A `Command` updating `research_plan` and incrementing `planning_iterations`,
-        routing to `review_plan` when `allow_collaborative_planning` is enabled or
-        `__end__` otherwise.
+        A partial state update setting `recon_queries`.
     """
     config = get_config()
     configuration = Configuration.from_runtime(runtime, config)
     session_id = get_session_id(config)
 
-    planning_model = init_openrouter_structured_model(
+    model = init_openrouter_structured_model(
+        configuration.recon_queries_llm_config,
+        output_schema=ReconQueries,
+        max_retries=configuration.max_structured_output_retries,
+        session_id=session_id,
+    )
+
+    messages = [
+        SystemMessage(content=RECON_QUERIES_SYSTEM_PROMPT.format(date=get_today_str())),
+        HumanMessage(
+            content=RECON_QUERIES_USER_PROMPT.format(research_question=state["research_brief"])
+        ),
+    ]
+    response = await model.ainvoke(messages, config=config)
+
+    return {"recon_queries": response.queries}
+
+
+async def recon_search(state: ScopingState) -> dict:
+    """Run parallel snippet-only Tavily searches for `recon_queries` and format XML context.
+
+    Reads `recon_queries` from state. Short-circuits with an empty
+    `landscape_context` string when `recon_queries` is empty or when Tavily
+    returns no results; otherwise queries Tavily with `search_depth="advanced"`
+    and `include_raw_content=False` (without writing to `BaseStore`) and
+    serializes the deduplicated hits via `landscape_context_to_xml`.
+
+    Returns:
+        A partial state update setting `landscape_context`.
+    """
+    queries = state["recon_queries"]
+    if not queries:
+        return {"landscape_context": ""}
+
+    results = await search_tavily_multiple(
+        queries,
+        max_results=3,
+        topic="general",
+        include_raw_content=False,
+        search_depth="advanced",
+    )
+
+    if not results:
+        return {"landscape_context": ""}
+
+    return {"landscape_context": landscape_context_to_xml(results)}
+
+
+async def create_plan(
+    state: ScopingState,
+    runtime: Runtime[Configuration],
+) -> dict:
+    """Generate a structured research plan from `research_brief` and optional reconnaissance context.
+
+    Reads `research_brief` and optional `landscape_context` from state, appending
+    `landscape_context` as a second `HumanMessage` when non-empty. Invokes the
+    `scoping_llm_config` structured model with `ResearchPlan` (retried up to
+    `max_structured_output_retries`). Requires `configurable.thread_id` for
+    session tracking.
+
+    Returns:
+        A partial state update setting `research_plan`.
+    """
+    config = get_config()
+    configuration = Configuration.from_runtime(runtime, config)
+    session_id = get_session_id(config)
+
+    model = init_openrouter_structured_model(
         configuration.scoping_llm_config,
         session_id=session_id,
         max_retries=configuration.max_structured_output_retries,
@@ -176,90 +241,37 @@ async def create_plan(
     )
 
     messages = [
-        SystemMessage(content=RESEARCH_PLANNING_SYSTEM_PROMPT.format(date=get_today_str())),
+        SystemMessage(content=CREATE_PLAN_SYSTEM_PROMPT.format(date=get_today_str())),
         HumanMessage(
-            content=RESEARCH_PLANNING_USER_PROMPT.format(research_question=state["research_brief"])
+            content=CREATE_PLAN_USER_PROMPT.format(research_question=state["research_brief"])
         ),
     ]
 
-    research_plan = state.get("research_plan")
-    if research_plan:
-        messages.append(
-            HumanMessage(
-                content=(
-                    f"{research_plan_to_xml(research_plan)}\n\n"
-                    f"<user_feedback>\n{state['plan_feedback']}\n</user_feedback>"
-                )
-            )
-        )
+    if landscape_context := state.get("landscape_context"):
+        messages.append(HumanMessage(content=landscape_context))
 
-    research_plan = await planning_model.ainvoke(messages, config=config)
+    research_plan = await model.ainvoke(messages, config=config)
 
-    return Command(
-        goto="review_plan" if configuration.allow_collaborative_planning else "__end__",
-        update={
-            "research_plan": research_plan,
-            "planning_iterations": state.get("planning_iterations", 0) + 1,
-        },
-    )
-
-
-def review_plan(
-    state: ScopingState, runtime: Runtime[Configuration]
-) -> Command[Literal["create_plan", "__end__"]]:
-    """Interrupt for human review of the proposed research plan and route next steps.
-
-    Reads `research_plan` and `planning_iterations` from state, then suspends execution
-    with `{"research_plan": <json dict>, "message": "Review the proposed research plan."}`
-    and `response_schema=ResearchPlanReview`. Requires a `checkpointer` at runtime and
-    resumes with a `ResearchPlanReview` payload (`approved`, `feedback`). Routes to
-    `__end__` when approved or when `planning_iterations` reaches
-    `max_planning_iterations` (logging a warning); otherwise routes back to `create_plan`.
-
-    Returns:
-        A `Command` updating `plan_approved` and `plan_feedback` and routing to either
-        `create_plan` or `__end__`.
-    """
-    response = interrupt(
-        {
-            "research_plan": state["research_plan"].model_dump(mode="json"),
-            "message": "Review the proposed research plan.",
-        },
-        response_schema=ResearchPlanReview,
-    )
-
-    config = get_config()
-    configuration = Configuration.from_runtime(runtime, config)
-
-    should_end = False
-    if response.approved:
-        should_end = True
-    elif state.get("planning_iterations", 0) >= configuration.max_planning_iterations:
-        should_end = True
-        logger.warning(
-            "Maximum planning iterations reached. Proceeding with the current research plan."
-        )
-
-    return Command(
-        goto="__end__" if should_end else "create_plan",
-        update={"plan_approved": response.approved, "plan_feedback": response.feedback},
-    )
+    return {
+        "research_plan": research_plan,
+    }
 
 
 def build_scoping_graph(checkpointer: Checkpointer):
     """Build and compile the scoping workflow graph.
 
-    Uses `ScopingState` internally with `ScopingInputState` as input, `ScopingOutputState`
-    as output, and `Configuration` as context schema. Declares fixed edges from `START`
-    to `assess_clarification`, `ask_clarification` back to `assess_clarification`, and
-    `write_research_brief` to `create_plan`; all branching and loop termination are
-    driven by `Command` returns in `assess_clarification`, `create_plan`, and
-    `review_plan`.
+    Uses `ScopingState` internally with `ScopingInputState` as input,
+    `ScopingOutputState` as output, and `Configuration` as context schema.
+    Declares fixed edges from `START` to `assess_clarification`, from
+    `ask_clarification` back to `assess_clarification`, and sequentially from
+    `write_research_brief` through `create_recon_queries`, `recon_search`, and
+    `create_plan` to `__end__`; clarification branching is driven by `Command`
+    returns in `assess_clarification`.
 
     Args:
         checkpointer: Checkpointer for state persistence, or `None` when supplied by the
             runtime (such as LangGraph Studio). A checkpointer is required at execution
-            time for `ask_clarification` and `review_plan` interrupts.
+            time for the `ask_clarification` interrupt.
 
     Returns:
         The compiled scoping workflow graph.
@@ -279,11 +291,15 @@ def build_scoping_graph(checkpointer: Checkpointer):
     builder.add_node("assess_clarification", assess_clarification)
     builder.add_node("ask_clarification", ask_clarification)
     builder.add_node("write_research_brief", write_research_brief)
+    builder.add_node("create_recon_queries", create_recon_queries)
+    builder.add_node("recon_search", recon_search)
     builder.add_node("create_plan", create_plan)
-    builder.add_node("review_plan", review_plan)
 
     builder.add_edge(START, "assess_clarification")
     builder.add_edge("ask_clarification", "assess_clarification")
-    builder.add_edge("write_research_brief", "create_plan")
+    builder.add_edge("write_research_brief", "create_recon_queries")
+    builder.add_edge("create_recon_queries", "recon_search")
+    builder.add_edge("recon_search", "create_plan")
+    builder.add_edge("create_plan", "__end__")
 
     return builder.compile(checkpointer=checkpointer)
